@@ -21,16 +21,16 @@ package org.apache.jmeter.protocol.http.parser;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 
 /**
  * BaseParser is the base class for {@link LinkExtractorParser}
- * It is advised to make subclasses reusable accross parsing, so {@link BaseParser}{@link #isReusable()} returns true by default
+ * It is advised to make subclasses reusable across parsing, so {@link BaseParser}{@link #isReusable()} returns true by default
  * @since 3.0
  */
 public abstract class BaseParser implements LinkExtractorParser {
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger LOG = LoggerFactory.getLogger(BaseParser.class);
     // Cache of parsers - parsers must be re-usable
     private static final ConcurrentMap<String, LinkExtractorParser> PARSERS = new ConcurrentHashMap<>(5);
 
@@ -76,7 +76,7 @@ public abstract class BaseParser implements LinkExtractorParser {
         LOG.info("Created " + parserClassName);
         if (parser.isReusable()) {
             LinkExtractorParser currentParser = PARSERS.putIfAbsent(
-                    parserClassName, parser);// cache the parser if not alread
+                    parserClassName, parser);// cache the parser if not already
                                              // done by another thread
             if (currentParser != null) {
                 return currentParser;

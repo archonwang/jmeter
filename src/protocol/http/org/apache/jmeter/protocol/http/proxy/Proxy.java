@@ -51,10 +51,10 @@ import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
+import org.slf4j.LoggerFactory;
 import org.apache.jorphan.util.JMeterException;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
 
 /**
  * Thread to handle one client request. Gets the request from the client and
@@ -64,7 +64,7 @@ import org.apache.log.Logger;
  *
  */
 public class Proxy extends Thread {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Proxy.class);
 
     private static final byte[] CRLF_BYTES = { 0x0d, 0x0a };
     private static final String CRLF_STRING = "\r\n";
@@ -188,7 +188,7 @@ public class Proxy extends Thread {
                 if (isDebug) {
                     log.debug(port + "Method CONNECT => SSL");
                 }
-                // write a OK reponse to browser, to engage SSL exchange
+                // write a OK response to browser, to engage SSL exchange
                 outStreamClient.write(("HTTP/1.0 200 OK\r\n\r\n").getBytes(SampleResult.DEFAULT_HTTP_ENCODING)); // $NON-NLS-1$
                 outStreamClient.flush();
                // With ssl request, url is host:port (without https:// or path)
@@ -333,10 +333,7 @@ public class Proxy extends Thread {
                     hashAlias = alias;
                     keyAlias = alias;
                 }
-            } catch (IOException e) {
-                log.error(port + "Problem with keystore", e);
-                return null;
-            } catch (GeneralSecurityException e) {
+            } catch (IOException | GeneralSecurityException e) {
                 log.error(port + "Problem with keystore", e);
                 return null;
             }
@@ -464,7 +461,7 @@ public class Proxy extends Thread {
         if (result == null) {
             result = new SampleResult();
             ByteArrayOutputStream text = new ByteArrayOutputStream(200);
-            e.printStackTrace(new PrintStream(text));
+            e.printStackTrace(new PrintStream(text)); // NOSONAR we store the Stacktrace in the result
             result.setResponseData(text.toByteArray());
             result.setSamplerData(request.getFirstLine());
             result.setSampleLabel(request.getUrl());

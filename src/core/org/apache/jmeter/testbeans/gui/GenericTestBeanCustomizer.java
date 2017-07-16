@@ -42,8 +42,8 @@ import org.apache.commons.lang3.ClassUtils;
 import org.apache.jmeter.gui.ClearGui;
 import org.apache.jmeter.testbeans.TestBeanHelper;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The GenericTestBeanCustomizer is designed to provide developers with a
@@ -95,9 +95,9 @@ import org.apache.log.Logger;
  * </dl>
  */
 public class GenericTestBeanCustomizer extends JPanel implements SharedCustomizer {
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(GenericTestBeanCustomizer.class);
 
     // Need to register Editors for Java classes because we cannot create them
     // in the same package, nor can we create them in the built-in search patch of packages,
@@ -226,7 +226,7 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
 
             // Don't get editors for hidden or non-read-write properties:
             if (TestBeanHelper.isDescriptorIgnored(descriptor)) {
-                log.debug("Skipping editor for property " + name);
+                log.debug("Skipping editor for property {}", name);
                 editors[i] = null;
                 continue;
             }
@@ -241,10 +241,8 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
                     propertyEditor = new EnumEditor(descriptor, enumClass, (ResourceBundle) descriptor.getValue(GenericTestBeanCustomizer.RESOURCE_BUNDLE));
             } else {
                 Class<?> editorClass = descriptor.getPropertyEditorClass();
-                if (log.isDebugEnabled()) {
-                    log.debug("Property " + name + " has editor class " + editorClass);
-                }
-    
+                log.debug("Property {} has editor class {}", name, editorClass);
+
                 if (editorClass != null) {
                     try {
                         propertyEditor = (PropertyEditor) editorClass.newInstance();
@@ -259,26 +257,21 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
             }
             
             if (propertyEditor == null) {
-                log.warn("No editor for property: " + name 
-                        + " type: " + descriptor.getPropertyType()
-                        + " in bean: " + beanInfo.getBeanDescriptor().getDisplayName()
-                        );
+                if (log.isWarnEnabled()) {
+                    log.warn("No editor for property: {} type: {} in bean: {}", name, descriptor.getPropertyType(),
+                            beanInfo.getBeanDescriptor().getDisplayName());
+                }
                 editors[i] = null;
                 continue;
             }
 
-            if (log.isDebugEnabled()) {
-                log.debug("Property " + name + " has property editor " + propertyEditor);
-            }
+            log.debug("Property {} has property editor {}", name, propertyEditor);
 
             validateAttributes(descriptor, propertyEditor);
 
             if (!propertyEditor.supportsCustomEditor()) {
                 propertyEditor = createWrapperEditor(propertyEditor, descriptor);
-
-                if (log.isDebugEnabled()) {
-                    log.debug("Editor for property " + name + " is wrapped in " + propertyEditor);
-                }
+                log.debug("Editor for property {} is wrapped in {}", name, propertyEditor);
             }
             if(propertyEditor instanceof TestBeanPropertyEditor)
             {
@@ -328,30 +321,42 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
         final Object deflt = pd.getValue(DEFAULT);
         if (deflt == null) {
             if (notNull(pd)) {
-                log.warn(getDetails(pd) + " requires a value but does not provide a default.");
+                if (log.isWarnEnabled()) {
+                    log.warn("{} requires a value but does not provide a default.", getDetails(pd));
+                }
             }
             if (noSaveDefault(pd)) {
-                log.warn(getDetails(pd) + " specifies DEFAULT_NO_SAVE but does not provide a default.");                
+                if (log.isWarnEnabled()) {
+                    log.warn("{} specifies DEFAULT_NO_SAVE but does not provide a default.", getDetails(pd));
+                }
             }
         } else {
             final Class<?> defltClass = deflt.getClass(); // the DEFAULT class
             // Convert int to Integer etc:
             final Class<?> propClass = ClassUtils.primitiveToWrapper(pd.getPropertyType());
             if (!propClass.isAssignableFrom(defltClass) ){
-                log.warn(getDetails(pd) + " has a DEFAULT of class " + defltClass.getCanonicalName());
+                if (log.isWarnEnabled()) {
+                    log.warn("{} has a DEFAULT of class {}", getDetails(pd), defltClass.getCanonicalName());
+                }
             }            
         }
         if (notOther(pd) && pd.getValue(TAGS) == null && pe.getTags() == null) {
-            log.warn(getDetails(pd) + " does not have tags but other values are not allowed.");
+            if (log.isWarnEnabled()) {
+                log.warn("{} does not have tags but other values are not allowed.", getDetails(pd));
+            }
         }
         if (!notNull(pd)) {
             Class<?> propertyType = pd.getPropertyType();
             if (propertyType.isPrimitive()) {
-                log.warn(getDetails(pd) + " allows null but is a primitive type");
+                if (log.isWarnEnabled()) {
+                    log.warn("{} allows null but is a primitive type", getDetails(pd));
+                }
             }
         }
         if (!pd.attributeNames().hasMoreElements()) {
-            log.warn(getDetails(pd) + " does not appear to have been configured");            
+            if (log.isWarnEnabled()) {
+                log.warn("{} does not appear to have been configured", getDetails(pd));
+            }
         }
     }
 
@@ -501,7 +506,7 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
                 String name = descriptor.getName();
                 if (value != null) {
                     propertyMap.put(name, value);
-                    log.debug("Set " + name + "= " + value);
+                    log.debug("Set {}={}", name, value);
                 }
                 firePropertyChange(name, null, value);
             }
@@ -520,11 +525,11 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
                 // incorrect value with anything valid, e.g. the default value
                 // for the property.
                 // But for the time being, I just prefer to be aware of any
-                // problems occuring here, most likely programming errors,
+                // problems occurring here, most likely programming errors,
                 // so I'll bail out.
                 // (MS Note) Can't bail out - newly create elements have blank
                 // values and must get the defaults.
-                // Also, when loading previous versions of jmeter test scripts,
+                // Also, when loading previous versions of JMeter test scripts,
                 // some values
                 // may not be right, and should get default values - MS
                 // TODO: review this and possibly change to:
@@ -585,7 +590,7 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
             }
 
             if (log.isDebugEnabled()) {
-                log.debug("Laying property " + descriptors[i].getName());
+                log.debug("Laying property {}", descriptors[i].getName());
             }
 
             String g = group(descriptors[i]);
@@ -698,12 +703,11 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
 
         @Override
         public int compare(PropertyDescriptor d1, PropertyDescriptor d2) {
-            int result;
-
-            String g1 = group(d1), g2 = group(d2);
+            String g1 = group(d1);
+            String g2 = group(d2);
             Integer go1 = groupOrder(g1), go2 = groupOrder(g2);
 
-            result = go1.compareTo(go2);
+            int result = go1.compareTo(go2);
             if (result != 0) {
                 return result;
             }
@@ -713,7 +717,8 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
                 return result;
             }
 
-            Integer po1 = propertyOrder(d1), po2 = propertyOrder(d2);
+            Integer po1 = propertyOrder(d1);
+            Integer po2 = propertyOrder(d2);
             result = po1.compareTo(po2);
             if (result != 0) {
                 return result;
@@ -763,14 +768,10 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
                 String name = descriptors[i].getName();
                 if (value == null) {
                     propertyMap.remove(name);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Unset " + name);
-                    }
+                    log.debug("Unset {}", name);
                 } else {
                     propertyMap.put(name, value);
-                    if (log.isDebugEnabled()) {
-                        log.debug("Set " + name + "= " + value);
-                    }
+                    log.debug("Set {}={}", name, value);
                 }
             }
         }
@@ -795,7 +796,7 @@ public class GenericTestBeanCustomizer extends JPanel implements SharedCustomize
                     propertyEditor.setAsText("");
                 }
                 } catch (IllegalArgumentException ex){
-                    log.error("Failed to set field "+descriptors[i].getName(),ex);
+                    log.error("Failed to set field {}", descriptors[i].getName(), ex);
                 }
             }
         }

@@ -32,18 +32,18 @@ import org.apache.jmeter.processor.PostProcessor;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.AbstractScopedTestElement;
 import org.apache.jmeter.testelement.property.BooleanProperty;
+import org.apache.jmeter.testelement.property.IntegerProperty;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.TidyException;
 import org.apache.jmeter.util.XPathUtil;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JMeterError;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.xml.sax.SAXException;
 
-//@see org.apache.jmeter.extractor.TestXPathExtractor for unit tests
 
 /**
  * Extracts text from (X)HTML response using XPath query language
@@ -60,20 +60,18 @@ import org.xml.sax.SAXException;
  * <dt>//head/text()</dt>
  *     <dd>extracts the text content for head node.</dd>
  * </dl>
- */
- /* This file is inspired by RegexExtractor.
- * author <a href="mailto:hpaluch@gitus.cz">Henryk Paluch</a>
- *            of <a href="http://www.gitus.com">Gitus a.s.</a>
- *
- * See Bugzilla: 37183
+  see org.apache.jmeter.extractor.TestXPathExtractor for unit tests
  */
 public class XPathExtractor extends AbstractScopedTestElement implements
         PostProcessor, Serializable {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(XPathExtractor.class);
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 242L;
+    
+    private static final int DEFAULT_VALUE = -1;
+    public static final String DEFAULT_VALUE_AS_STRING = Integer.toString(DEFAULT_VALUE);
 
-    private static final String MATCH_NR = "matchNr"; // $NON-NLS-1$
+    private static final String REF_MATCH_NR    = "matchNr"; // $NON-NLS-1$
 
     //+ JMX file attributes
     private static final String XPATH_QUERY     = "XPathExtractor.xpathQuery"; // $NON-NLS-1$
@@ -88,6 +86,7 @@ public class XPathExtractor extends AbstractScopedTestElement implements
     private static final String WHITESPACE      = "XPathExtractor.whitespace"; // $NON-NLS-1$
     private static final String VALIDATE        = "XPathExtractor.validate"; // $NON-NLS-1$
     private static final String FRAGMENT        = "XPathExtractor.fragment"; // $NON-NLS-1$
+    private static final String MATCH_NUMBER    = "XPathExtractor.matchNumber"; // $NON-NLS-1$
     //- JMX file attributes
 
 
@@ -114,7 +113,7 @@ public class XPathExtractor extends AbstractScopedTestElement implements
         JMeterVariables vars = context.getVariables();
         String refName = getRefName();
         vars.put(refName, getDefaultValue());
-        final String matchNR = concat(refName,MATCH_NR);
+        final String matchNR = concat(refName,REF_MATCH_NR);
         int prevCount=0; // number of previous matches
         try {
             prevCount=Integer.parseInt(vars.get(matchNR));
@@ -124,6 +123,7 @@ public class XPathExtractor extends AbstractScopedTestElement implements
         vars.put(matchNR, "0"); // In case parse fails // $NON-NLS-1$
         vars.remove(concat(refName,"1")); // In case parse fails // $NON-NLS-1$
 
+        int matchNumber = getMatchNumber();
         List<String> matches = new ArrayList<>();
         try{
             if (isScopeVariable()){
@@ -131,16 +131,19 @@ public class XPathExtractor extends AbstractScopedTestElement implements
                 if(inputString != null) {
                     if(inputString.length()>0) {
                         Document d =  parseResponse(inputString);
-                        getValuesForXPath(d,getXPathQuery(),matches);
+                        getValuesForXPath(d,getXPathQuery(), matches, matchNumber);
                     }
                 } else {
-                    log.warn("No variable '"+getVariableName()+"' found to process by XPathExtractor '"+getName()+"', skipping processing");
+                    if (log.isWarnEnabled()) {
+                        log.warn("No variable '{}' found to process by XPathExtractor '{}', skipping processing",
+                                getVariableName(), getName());
+                    }
                 }
             } else {
                 List<SampleResult> samples = getSampleList(previousResult);
                 for (SampleResult res : samples) {
                     Document d = parseResponse(res.getResponseDataAsString());
-                    getValuesForXPath(d,getXPathQuery(),matches);
+                    getValuesForXPath(d,getXPathQuery(), matches, matchNumber);
                 }
             }
             final int matchCount = matches.size();
@@ -163,8 +166,7 @@ public class XPathExtractor extends AbstractScopedTestElement implements
                 vars.remove(concat(refName,i));
             }
         }catch(IOException e){// e.g. DTD not reachable
-            final String errorMessage = "IOException on ("+getXPathQuery()+")";
-            log.error(errorMessage,e);
+            log.error("IOException on ({})", getXPathQuery(), e);
             AssertionResult ass = new AssertionResult(getName());
             ass.setError(true);
             ass.setFailureMessage(new StringBuilder("IOException: ").append(e.getLocalizedMessage()).toString());
@@ -175,10 +177,14 @@ public class XPathExtractor extends AbstractScopedTestElement implements
             log.error(errrorMessage,e);
             throw new JMeterError(errrorMessage,e);
         } catch (SAXException e) {// Can happen for bad input document
-            log.warn("SAXException while processing ("+getXPathQuery()+") "+e.getLocalizedMessage());
+            if (log.isWarnEnabled()) {
+                log.warn("SAXException while processing ({}). {}", getXPathQuery(), e.getLocalizedMessage());
+            }
             addAssertionFailure(previousResult, e, false); // Should this also fail the sample?
         } catch (TransformerException e) {// Can happen for incorrect XPath expression
-            log.warn("TransformerException while processing ("+getXPathQuery()+") "+e.getLocalizedMessage());
+            if (log.isWarnEnabled()) {
+                log.warn("TransformerException while processing ({}). {}", getXPathQuery(), e.getLocalizedMessage());
+            }
             addAssertionFailure(previousResult, e, false);
         } catch (TidyException e) {
             // Will already have been logged by XPathUtil
@@ -188,7 +194,7 @@ public class XPathExtractor extends AbstractScopedTestElement implements
 
     private void addAssertionFailure(final SampleResult previousResult,
             final Throwable thrown, final boolean setFailed) {
-        AssertionResult ass = new AssertionResult(thrown.getClass().getSimpleName()); // $NON-NLS-1$
+        AssertionResult ass = new AssertionResult(getName()); // $NON-NLS-1$
         ass.setFailure(true);
         ass.setFailureMessage(thrown.getLocalizedMessage()+"\nSee log file for further details.");
         previousResult.addAssertionResult(ass);
@@ -308,12 +314,13 @@ public class XPathExtractor extends AbstractScopedTestElement implements
      * @param d the document
      * @param query the query to execute
      * @param matchStrings list of matched strings (may include nulls)
+     * @param matchNumber int Match Number
      *
      * @throws TransformerException
      */
-    private void getValuesForXPath(Document d,String query, List<String> matchStrings)
+    private void getValuesForXPath(Document d,String query, List<String> matchStrings, int matchNumber)
         throws TransformerException {
-        XPathUtil.putValuesForXPathInList(d, query, matchStrings, getFragment());
+        XPathUtil.putValuesForXPathInList(d, query, matchStrings, getFragment(), matchNumber);
     }
 
     public void setWhitespace(boolean selected) {
@@ -338,5 +345,45 @@ public class XPathExtractor extends AbstractScopedTestElement implements
 
     public boolean isDownloadDTDs() {
         return getPropertyAsBoolean(DOWNLOAD_DTDS, false);
+    }
+    
+    /**
+     * Set which Match to use. This can be any positive number, indicating the
+     * exact match to use, or <code>0</code>, which is interpreted as meaning random.
+     *
+     * @param matchNumber The number of the match to be used
+     */
+    public void setMatchNumber(int matchNumber) {
+        setProperty(new IntegerProperty(MATCH_NUMBER, matchNumber));
+    }
+
+    /**
+     * Set which Match to use. This can be any positive number, indicating the
+     * exact match to use, or <code>0</code>, which is interpreted as meaning random.
+     *
+     * @param matchNumber The number of the match to be used
+     */
+    public void setMatchNumber(String matchNumber) {
+        setProperty(MATCH_NUMBER, matchNumber);
+    }
+
+    /**
+     * Return which Match to use. This can be any positive number, indicating the
+     * exact match to use, or <code>0</code>, which is interpreted as meaning random.
+     *
+     * @return matchNumber The number of the match to be used
+     */
+    public int getMatchNumber() {
+        return getPropertyAsInt(MATCH_NUMBER, DEFAULT_VALUE);
+    }
+
+    /**
+     * Return which Match to use. This can be any positive number, indicating the
+     * exact match to use, or <code>0</code>, which is interpreted as meaning random.
+     *
+     * @return matchNumber The number of the match to be used
+     */
+    public String getMatchNumberAsString() {
+        return getPropertyAsString(MATCH_NUMBER, DEFAULT_VALUE_AS_STRING);
     }
 }

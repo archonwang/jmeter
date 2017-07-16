@@ -24,21 +24,19 @@ import java.rmi.RemoteException;
 import org.apache.jmeter.engine.util.NoThreadClone;
 import org.apache.jmeter.testelement.AbstractTestElement;
 import org.apache.jmeter.testelement.TestStateListener;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  * Lars-Erik Helander provided the idea (and original implementation) for the
  * caching functionality (sampleStore).
- *
- * @version $Revision$
  */
 public class RemoteListenerWrapper extends AbstractTestElement implements SampleListener, TestStateListener, Serializable,
         NoThreadClone {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(RemoteListenerWrapper.class);
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
     private final RemoteSampleListener listener;
 
@@ -61,16 +59,12 @@ public class RemoteListenerWrapper extends AbstractTestElement implements Sample
         log.debug("Test Started()");
         try {
             listener.testStarted();
-        } catch (Throwable ex) {
-            log.warn("testStarted()", ex);
-            if (ex instanceof Error){
-                throw (Error) ex;
-            }
-            if (ex instanceof RuntimeException){
-                throw (RuntimeException) ex;
-            }
+        } catch (Error | RuntimeException ex) { // NOSONAR We want to have errors logged in log file
+            log.error("testStarted()", ex);
+            throw ex;
+        } catch (Exception ex) {
+            log.error("testStarted()", ex);
         }
-
     }
 
     @Override
@@ -80,17 +74,14 @@ public class RemoteListenerWrapper extends AbstractTestElement implements Sample
 
     @Override
     public void testStarted(String host) {
-        log.debug("Test Started on " + host);
+        log.debug("Test Started on {}", host);
         try {
             listener.testStarted(host);
-        } catch (Throwable ex) {
-            log.error("testStarted(host)", ex);
-            if (ex instanceof Error){
-                throw (Error) ex;
-            }
-            if (ex instanceof RuntimeException){
-                throw (RuntimeException) ex;
-            }
+        } catch (Error | RuntimeException ex) { // NOSONAR We want to have errors logged in log file
+            log.error("testStarted(host) on {}", host, ex);
+            throw ex;
+        } catch(Exception ex) {
+            log.error("testStarted(host) on {}", host, ex);
         }
     }
 
@@ -110,7 +101,7 @@ public class RemoteListenerWrapper extends AbstractTestElement implements Sample
     // is not used, but it may become an issue in the future. Then these
     // events must also be stored so that replay of all events may occur and
     // in the right order. Each stored event must then be tagged with something
-    // that lets you distinguish between occured, started and ended.
+    // that lets you distinguish between occurred, started and ended.
 
     @Override
     public void sampleStarted(SampleEvent e) {

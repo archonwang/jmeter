@@ -38,8 +38,8 @@ import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.util.JSR223TestElement;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * __groovy function 
@@ -47,7 +47,7 @@ import org.apache.log.Logger;
  * @since 3.1
  */
 public class Groovy extends AbstractFunction {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Groovy.class);
 
     private static final String GROOVY_ENGINE_NAME = "groovy";
     
@@ -134,14 +134,6 @@ public class Groovy extends AbstractFunction {
         }
         return resultStr;
 
-    }
-
-    /*
-     * Helper method for use by scripts
-     *
-     */
-    public void log_info(String s) {
-        log.info(s);
     }
 
     /** {@inheritDoc} */

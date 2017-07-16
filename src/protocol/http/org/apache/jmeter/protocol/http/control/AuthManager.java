@@ -39,6 +39,7 @@ import org.apache.http.auth.NTCredentials;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.config.AuthSchemes;
+import org.apache.http.impl.auth.SPNegoSchemeFactory;
 import org.apache.http.impl.client.AbstractHttpClient;
 import org.apache.jmeter.config.ConfigElement;
 import org.apache.jmeter.config.ConfigTestElement;
@@ -50,9 +51,9 @@ import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.TestElementProperty;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 // For Unit tests, @see TestAuthManager
 
@@ -63,9 +64,9 @@ import org.apache.log.Logger;
  *
  */
 public class AuthManager extends ConfigTestElement implements TestStateListener, TestIterationListener, Serializable {
-    private static final long serialVersionUID = 234L;
+    private static final long serialVersionUID = 235L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(AuthManager.class);
 
     private static final String CLEAR = "AuthManager.clearEachIteration";// $NON-NLS-1$
 
@@ -334,18 +335,14 @@ public class AuthManager extends ConfigTestElement implements TestStateListener,
         if (!file.isAbsolute()) {
             file = new File(System.getProperty("user.dir"),authFile);
         }
-        PrintWriter writer = null;
-        try {
-            writer = new PrintWriter(new FileWriter(file));
+        try (FileWriter fw = new FileWriter(file);
+                PrintWriter writer = new PrintWriter(fw)){
             writer.println("# JMeter generated Authorization file");
             for (int i = 0; i < getAuthObjects().size(); i++) {
                 Authorization auth = (Authorization) getAuthObjects().get(i).getObjectValue();
                 writer.println(auth.toString());
             }
             writer.flush();
-            writer.close();
-        } finally {
-            JOrphanUtils.closeQuietly(writer);
         }
     }
 
@@ -366,10 +363,9 @@ public class AuthManager extends ConfigTestElement implements TestStateListener,
             throw new IOException("The file you specified cannot be read.");
         }
 
-        BufferedReader reader = null;
         boolean ok = true;
-        try {
-            reader = new BufferedReader(new FileReader(file));
+        try ( FileReader fr = new FileReader(file); 
+                BufferedReader reader = new BufferedReader(fr)){
             String line;
             while ((line = reader.readLine()) != null) {
                 try {
@@ -404,8 +400,6 @@ public class AuthManager extends ConfigTestElement implements TestStateListener,
                     ok = false;
                 }
             }
-        } finally {
-            JOrphanUtils.closeQuietly(reader);
         }
         if (!ok){
             JMeterUtils.reportErrorToUser("One or more errors found when reading the Auth file - see the log file");
@@ -470,7 +464,7 @@ public class AuthManager extends ConfigTestElement implements TestStateListener,
             if (Mechanism.KERBEROS.equals(auth.getMechanism())) {
                 ((AbstractHttpClient) client).getAuthSchemes().register(
                         AuthSchemes.SPNEGO,
-                        new FixedSPNegoSchemeFactory(isStripPort(url)));
+                        new SPNegoSchemeFactory(isStripPort(url)));
                 credentialsProvider.setCredentials(new AuthScope(null, -1, null), USE_JAAS_CREDENTIALS);
             } else {
                 credentialsProvider.setCredentials(
@@ -494,8 +488,8 @@ public class AuthManager extends ConfigTestElement implements TestStateListener,
         if (STRIP_PORT) {
             return true;
         }
-        return (url.getPort() == HTTPConstants.DEFAULT_HTTP_PORT ||
-                url.getPort() == HTTPConstants.DEFAULT_HTTPS_PORT);
+        return url.getPort() == HTTPConstants.DEFAULT_HTTP_PORT ||
+                url.getPort() == HTTPConstants.DEFAULT_HTTPS_PORT;
     }
 
     /**

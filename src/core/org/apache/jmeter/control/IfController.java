@@ -29,10 +29,10 @@ import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.testelement.ThreadListener;
 import org.apache.jmeter.testelement.property.StringProperty;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.Scriptable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -62,9 +62,9 @@ import org.mozilla.javascript.Scriptable;
 
 public class IfController extends GenericController implements Serializable, ThreadListener {
 
-    private static final Logger logger = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(IfController.class);
 
-    private static final long serialVersionUID = 241L;
+    private static final long serialVersionUID = 242L;
 
     private static final String NASHORN_ENGINE_NAME = "nashorn"; //$NON-NLS-1$
 
@@ -77,7 +77,7 @@ public class IfController extends GenericController implements Serializable, Thr
     private static final String USE_RHINO_ENGINE_PROPERTY = "javascript.use_rhino"; //$NON-NLS-1$
 
     private static final boolean USE_RHINO_ENGINE = 
-            JMeterUtils.getPropDefault(USE_RHINO_ENGINE_PROPERTY, true) ||
+            JMeterUtils.getPropDefault(USE_RHINO_ENGINE_PROPERTY, false) ||
             getInstance().getEngineByName(NASHORN_ENGINE_NAME) == null;
 
     
@@ -107,7 +107,7 @@ public class IfController extends GenericController implements Serializable, Thr
                 , "<cmd>", 1, null);
                 result = computeResultFromString(condition, Context.toString(cxResultObject));
             } catch (Exception e) {
-                logger.error(testElementName+": error while processing "+ "[" + condition + "]\n", e);
+                log.error("{}: error while processing "+ "[{}]", testElementName, condition, e);
             } finally {
                 Context.exit();
             }
@@ -124,7 +124,7 @@ public class IfController extends GenericController implements Serializable, Thr
                 Object o = NASHORN_ENGINE.get().eval(condition, newContext);
                 return computeResultFromString(condition, o.toString());
             } catch (Exception ex) {
-                logger.error(testElementName+": error while processing "+ "[" + condition + "]\n", ex);
+                log.error("{}: error while processing [{}]", testElementName, condition, ex);
             }
             return false;
         }
@@ -181,9 +181,7 @@ public class IfController extends GenericController implements Serializable, Thr
      * evaluate the condition clause log error if bad condition
      */
     private boolean evaluateCondition(String cond) {
-        if(logger.isDebugEnabled()) {
-            logger.debug("    getCondition() : [" + cond + "]");
-        }
+        log.debug("    getCondition() : [{}]", cond);
         return JAVASCRIPT_EVALUATOR.evaluate(getName(), cond);
     }
 
@@ -206,9 +204,7 @@ public class IfController extends GenericController implements Serializable, Thr
             default:
                 throw new Exception(" BAD CONDITION :: " + condition + " :: expected true or false");
         }
-        if (logger.isDebugEnabled()) {
-            logger.debug("    >> evaluate Condition -  [ " + condition + "] results is  [" + result + "]");
-        }
+        log.debug("    >> evaluate Condition -  [{}] results is  [{}]", condition, result);
         return result;
     }
     
@@ -219,7 +215,7 @@ public class IfController extends GenericController implements Serializable, Thr
 
     @Override
     public boolean isDone() {
-        // bug 26672 : the isDone result should always be false and not based on the expession evaluation
+        // bug 26672 : the isDone result should always be false and not based on the expression evaluation
         // if an IfController ever gets evaluated to false it gets removed from the test tree. 
         // The problem is that the condition might get evaluated to true the next iteration, 
         // which we don't get the opportunity for
@@ -231,7 +227,7 @@ public class IfController extends GenericController implements Serializable, Thr
      */
     @Override
     public Sampler next() {
-        // We should only evalute the condition if it is the first
+        // We should only evaluate the condition if it is the first
         // time ( first "iteration" ) we are called.
         // For subsequent calls, we are inside the IfControllerGroup,
         // so then we just pass the control to the next item inside the if control

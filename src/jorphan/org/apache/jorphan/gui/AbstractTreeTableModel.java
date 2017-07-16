@@ -22,8 +22,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import javax.swing.event.TableModelListener;
 import javax.swing.event.EventListenerList;
+import javax.swing.event.TableModelListener;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.tree.TreeNode;
 
@@ -36,15 +36,15 @@ public abstract class AbstractTreeTableModel extends DefaultTableModel implement
     protected final TreeNode rootNode;
     protected final EventListenerList listener = new EventListenerList();
 
-    protected transient final List<Object> objects = new ArrayList<>();
+    protected final transient List<Object> objects = new ArrayList<>();
 
-    protected transient final List<String> headers = new ArrayList<>();
+    protected final transient List<String> headers = new ArrayList<>();
 
-    protected transient final List<Class<?>> classes = new ArrayList<>();
+    protected final transient List<Class<?>> classes = new ArrayList<>();
 
-    protected transient final List<Functor> readFunctors;
+    protected final transient List<Functor> readFunctors;
 
-    protected transient final List<Functor> writeFunctors;
+    protected final transient List<Functor> writeFunctors;
 
     public AbstractTreeTableModel(TreeNode root) {
         this.rootNode = root;
@@ -111,9 +111,6 @@ public abstract class AbstractTreeTableModel extends DefaultTableModel implement
      */
     @Override
     public int getRowCount() {
-        if (objects == null) {
-            return 0;
-        }
         return objects.size();
     }
 

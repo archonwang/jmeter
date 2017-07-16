@@ -78,13 +78,10 @@ public class RenderAsCssJQuery implements ResultRenderer, ActionListener {
     @Override
     public void clearData() {
         this.cssJqueryDataField.setText(""); // $NON-NLS-1$
-        // don't set empty to keep cssJquery
-        // cssJqueryField.setText(""); // $NON-NLS-1$
         this.cssJqueryResultField.setText(""); // $NON-NLS-1$
-        // don't set empty to keep attribute
-        // this.attributeField.setText(""); // $NON-NLS-1$
+        // don't set cssJqueryField to empty to keep it
+        // don't set attribute to empty to keep it 
         // don't change impl
-        // this.cssJqueryLabeledChoice.setText(HtmlExtractor.DEFAULT_EXTRACTOR);
     }
 
     /** {@inheritDoc} */
@@ -175,13 +172,14 @@ public class RenderAsCssJQuery implements ResultRenderer, ActionListener {
         cssJqueryDataField.setWrapStyleWord(true);
 
         JScrollPane cssJqueryDataPane = GuiUtils.makeScrollPane(cssJqueryDataField);
-        cssJqueryDataPane.setMinimumSize(new Dimension(0, 200));
+        cssJqueryDataPane.setPreferredSize(new Dimension(0, 200));
 
         JPanel pane = new JPanel(new BorderLayout(0, 5));
 
         JSplitPane mainSplit = new JSplitPane(JSplitPane.VERTICAL_SPLIT,
                 cssJqueryDataPane, createCssJqueryTasksPanel());
-        mainSplit.setDividerLocation(300);
+        mainSplit.setDividerLocation(0.6d);
+        mainSplit.setOneTouchExpandable(true);
         pane.add(mainSplit, BorderLayout.CENTER);
         return pane;
     }

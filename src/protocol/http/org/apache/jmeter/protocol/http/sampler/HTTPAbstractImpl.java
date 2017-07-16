@@ -53,7 +53,7 @@ public abstract class HTTPAbstractImpl implements Interruptible, HTTPConstantsIn
     }
 
     /**
-     * If true create a SampleResult with emply content and 204 response code 
+     * If true create a SampleResult with empty content and 204 response code 
      */
     private static final CachedResourceMode CACHED_RESOURCE_MODE = 
             CachedResourceMode.valueOf(
@@ -366,9 +366,11 @@ public abstract class HTTPAbstractImpl implements Interruptible, HTTPConstantsIn
      * Invokes {@link HTTPSamplerBase#isMonitor()}
      *
      * @return flag whether monitor is enabled
+     * @deprecated since 3.2 always return false
      */
+    @Deprecated
     protected boolean isMonitor() {
-        return testElement.isMonitor();
+        return false;
     }
 
     /**

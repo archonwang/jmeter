@@ -31,16 +31,16 @@ import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.reflect.ClassFinder;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * CompoundFunction.
  *
  */
 public class CompoundVariable implements Function {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(CompoundVariable.class);
 
     private String rawParameters;
 
@@ -49,7 +49,8 @@ public class CompoundVariable implements Function {
     // Created during class init; not modified thereafter 
     private static final Map<String, Class<? extends Function>> functions = new HashMap<>();
 
-    private boolean hasFunction, isDynamic;
+    private boolean hasFunction;
+    private boolean isDynamic;
 
     private String permanentResults;
 
@@ -62,10 +63,10 @@ public class CompoundVariable implements Function {
             final String notContain = // Classnames must not contain this string [.gui.]
                 JMeterUtils.getProperty("classfinder.functions.notContain"); // $NON-NLS-1$
             if (contain!=null){
-                log.info("Note: Function class names must contain the string: '"+contain+"'");
+                log.info("Note: Function class names must contain the string: '{}'", contain);
             }
             if (notContain!=null){
-                log.info("Note: Function class names must not contain the string: '"+notContain+"'");
+                log.info("Note: Function class names must not contain the string: '{}'", notContain);
             }
             
             List<String> classes = ClassFinder.findClassesThatExtend(JMeterUtils.getSearchPaths(),
@@ -86,10 +87,10 @@ public class CompoundVariable implements Function {
             if (functionCount == 0) {
                 log.warn("Did not find any functions");
             } else {
-                log.debug("Function count: "+functionCount);
+                log.debug("Function count: {}", functionCount);
             }
         } catch (Exception err) {
-            log.error("", err);
+            log.error("Exception occurred in static initialization of CompoundVariable.", err);
         }
     }
 
@@ -103,9 +104,7 @@ public class CompoundVariable implements Function {
             setParameters(parameters);
         } catch (InvalidVariableException e) {
             // TODO should level be more than debug ?
-            if(log.isDebugEnabled()) {
-                log.debug("Invalid variable:"+ parameters, e);
-            }
+            log.debug("Invalid variable: {}", parameters, e);
         }
     }
 
@@ -142,9 +141,7 @@ public class CompoundVariable implements Function {
                     results.append(((Function) item).execute(previousResult, currentSampler));
                 } catch (InvalidVariableException e) {
                     // TODO should level be more than debug ?
-                    if(log.isDebugEnabled()) {
-                        log.debug("Invalid variable:"+item, e);
-                    }
+                    log.debug("Invalid variable: {}", item, e);
                 }
             } else if (item instanceof SimpleVariable) {
                 results.append(((SimpleVariable) item).toString());
@@ -205,7 +202,7 @@ public class CompoundVariable implements Function {
             try {
                 return ((Class<?>) functions.get(functionName)).newInstance();
             } catch (Exception e) {
-                log.error("", e); // $NON-NLS-1$
+                log.error("Exception occurred while instantiating a function: {}", functionName, e); // $NON-NLS-1$
                 throw new InvalidVariableException(e);
             }
         }

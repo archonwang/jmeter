@@ -41,8 +41,8 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.visualizers.Visualizer;
 import org.apache.jorphan.gui.ComponentUtil;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This is the base class for JMeter GUI components which can display test
@@ -77,7 +77,7 @@ import org.apache.log.Logger;
  * </ul>
  * </li>
  * </ul>
- * For most developers, making a new visualizer is primarly for the purpose of
+ * For most developers, making a new visualizer is primarily for the purpose of
  * either calculating new statistics on the sample results that other
  * visualizers don't calculate, or displaying the results visually in a new and
  * interesting way. Making a new visualizer for either of these purposes is easy -
@@ -102,10 +102,10 @@ public abstract class AbstractVisualizer
     extends AbstractListenerGui
     implements Visualizer, ChangeListener, UnsharedComponent, Clearable
     {
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
     /** Logging. */
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(AbstractVisualizer.class);
     
     /** File Extensions */
     private static final String[] EXTS = { ".xml", ".jtl", ".csv" }; // $NON-NLS-1$ $NON-NLS-2$ $NON-NLS-3$

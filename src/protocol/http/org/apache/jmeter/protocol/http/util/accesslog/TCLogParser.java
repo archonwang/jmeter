@@ -34,8 +34,8 @@ import java.util.zip.GZIPInputStream;
 
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.testelement.TestElement;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 
 // For JUnit tests, @see TestTCLogParser
 
@@ -75,7 +75,7 @@ import org.apache.log.Logger;
  */
 
 public class TCLogParser implements LogParser {
-    protected static final Logger log = LoggingManager.getLoggerForClass();
+    protected static final Logger log = LoggerFactory.getLogger(TCLogParser.class);
 
     /*
      * TODO should these fields be public?
@@ -84,7 +84,7 @@ public class TCLogParser implements LogParser {
      * Also, are they any different from HTTPConstants.GET etc. ?
      * In some cases they seem to be used as the method name from the Tomcat log.
      * However the RMETHOD field is used as the value for HTTPSamplerBase.METHOD,
-     * for which HTTPConstants is most approriate.
+     * for which HTTPConstants is most appropriate.
      */
     public static final String GET = "GET";
 

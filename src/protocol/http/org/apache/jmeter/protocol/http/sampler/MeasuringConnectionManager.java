@@ -38,10 +38,10 @@ import org.apache.http.conn.DnsResolver;
 import org.apache.http.conn.ManagedClientConnection;
 import org.apache.http.conn.routing.HttpRoute;
 import org.apache.http.conn.scheme.SchemeRegistry;
-import org.apache.http.impl.conn.JMeterPoolingClientConnectionManager;
 import org.apache.http.impl.conn.PoolingClientConnectionManager;
 import org.apache.http.params.HttpParams;
 import org.apache.http.protocol.HttpContext;
+import org.apache.jmeter.protocol.http.sampler.hc.JMeterPoolingClientConnectionManager;
 import org.apache.jmeter.samplers.SampleResult;
 
 /**
@@ -65,14 +65,14 @@ public class MeasuringConnectionManager extends JMeterPoolingClientConnectionMan
     }
 
     /**
-     * Overriden to use {@link JMeterClientConnectionOperator} and fix SNI issue 
+     * Overridden to use {@link JMeterClientConnectionOperator} and fix SNI issue
      * @see "https://bz.apache.org/bugzilla/show_bug.cgi?id=57935"
      * @see org.apache.http.impl.conn.PoolingClientConnectionManager#createConnectionOperator(org.apache.http.conn.scheme.SchemeRegistry)
      */
     @Override
     protected ClientConnectionOperator createConnectionOperator(
             SchemeRegistry schreg) {
-        return new JMeterClientConnectionOperator(schreg);
+        return new JMeterClientConnectionOperator(schreg, getDnsResolver());
     }
 
 

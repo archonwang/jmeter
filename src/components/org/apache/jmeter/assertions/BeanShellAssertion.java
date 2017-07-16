@@ -21,17 +21,17 @@ package org.apache.jmeter.assertions;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.util.BeanShellInterpreter;
 import org.apache.jmeter.util.BeanShellTestElement;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An Assertion which understands BeanShell
  *
  */
 public class BeanShellAssertion extends BeanShellTestElement implements Assertion {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(BeanShellAssertion.class);
 
-    private static final long serialVersionUID = 3;
+    private static final long serialVersionUID = 4;
 
     public static final String FILENAME = "BeanShellAssertion.filename"; //$NON-NLS-1$
 
@@ -109,14 +109,7 @@ public class BeanShellAssertion extends BeanShellTestElement implements Assertio
                     .toString()));
             result.setError(false);
         }
-        /*
-         * To avoid class loading problems when the BSH jar is missing, we don't
-         * try to catch this error separately catch (bsh.EvalError ex) {
-         * log.debug("",ex); result.setError(true);
-         * result.setFailureMessage(ex.toString()); }
-         */
-        // but we do trap this error to make tests work better
-        catch (NoClassDefFoundError ex) {
+        catch (NoClassDefFoundError ex) { // NOSONAR explicitly trap this error to make tests work better
             log.error("BeanShell Jar missing? " + ex.toString());
             result.setError(true);
             result.setFailureMessage("BeanShell Jar missing? " + ex.toString());
@@ -125,7 +118,9 @@ public class BeanShellAssertion extends BeanShellTestElement implements Assertio
         {
             result.setError(true);
             result.setFailureMessage(ex.toString());
-            log.warn(ex.toString());
+            if (log.isWarnEnabled()) {
+                log.warn(ex.toString());
+            }
         }
 
         return result;

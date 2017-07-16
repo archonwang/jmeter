@@ -28,8 +28,9 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.config.ConfigTestElement;
+import org.apache.jmeter.gui.Replaceable;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
@@ -39,9 +40,8 @@ import org.apache.jorphan.util.JOrphanUtils;
  * This class provides an interface to headers file to pass HTTP headers along
  * with a request.
  *
- * @version $Revision$
  */
-public class HeaderManager extends ConfigTestElement implements Serializable {
+public class HeaderManager extends ConfigTestElement implements Serializable, Replaceable {
 
     private static final long serialVersionUID = 240L;
 
@@ -53,14 +53,6 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
         };
 
     private static final int COLUMN_COUNT = COLUMN_RESOURCE_NAMES.length;
-
-
-    /**
-     * Apache SOAP driver does not provide an easy way to get and set the cookie
-     * or HTTP header. Therefore it is necessary to store the SOAPHTTPConnection
-     * object and reuse it.
-     */
-    private Object SOAPHeader = null;
 
     public HeaderManager() {
         setProperty(new CollectionProperty(HEADERS, new ArrayList<>()));
@@ -113,16 +105,16 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
             file = new File(System.getProperty("user.dir")// $NON-NLS-1$
                     + File.separator + headFile);
         }
-        PrintWriter writer = new PrintWriter(new FileWriter(file)); // TODO Charset ?
-        writer.println("# JMeter generated Header file");// $NON-NLS-1$
-        final CollectionProperty hdrs = getHeaders();
-        for (int i = 0; i < hdrs.size(); i++) {
-            final JMeterProperty hdr = hdrs.get(i);
-            Header head = (Header) hdr.getObjectValue();
-            writer.println(head.toString());
+        try ( FileWriter fw = new FileWriter(file);
+                PrintWriter writer = new PrintWriter(fw);) { // TODO Charset ? 
+            writer.println("# JMeter generated Header file");// $NON-NLS-1$
+            final CollectionProperty hdrs = getHeaders();
+            for (int i = 0; i < hdrs.size(); i++) {
+                final JMeterProperty hdr = hdrs.get(i);
+                Header head = (Header) hdr.getObjectValue();
+                writer.println(head.toString());
+            }
         }
-        writer.flush();
-        writer.close();
     }
 
     /**
@@ -144,9 +136,8 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
             throw new IOException("The file you specified cannot be read.");
         }
 
-        BufferedReader reader = null;
-        try {
-            reader = new BufferedReader(new FileReader(file)); // TODO Charset ?
+        try ( FileReader fr = new FileReader(file);
+                BufferedReader reader = new BufferedReader(fr) ) {
             String line;
             while ((line = reader.readLine()) != null) {
                 try {
@@ -162,8 +153,6 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
                     throw new IOException("Error parsing header line\n\t'" + line + "'\n\t" + e);
                 }
             }
-        } finally {
-            IOUtils.closeQuietly(reader);
         }
     }
 
@@ -233,39 +222,34 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
     }
 
     /**
-     * Added support for SOAP related header stuff. 1-29-04 Peter Lin
-     *
-     * @return the SOAP header Object
+     * Merge the attributes with a another HeaderManager's attributes.
+     * 
+     * @param element
+     *            The object to be merged with
+     * @param preferLocalValues Not used
+     * @return merged HeaderManager
+     * @throws IllegalArgumentException
+     *             if <code>element</code> is not an instance of
+     *             {@link HeaderManager}
+     *             
+     * @deprecated since 3.2, use {@link HeaderManager#merge(TestElement)} as this method will be removed in a future version
      */
-    public Object getSOAPHeader() {
-        return this.SOAPHeader;
+    @Deprecated
+    public HeaderManager merge(TestElement element, boolean preferLocalValues) {
+        return merge(element);
     }
-
-    /**
-     * Set the SOAPHeader with the SOAPHTTPConnection object. We may or may not
-     * want to rename this to setHeaderObject(Object). Conceivably, other
-     * samplers may need this kind of functionality. 1-29-04 Peter Lin
-     *
-     * @param header soap header
-     */
-    public void setSOAPHeader(Object header) {
-        this.SOAPHeader = header;
-    }
-
+        
     /**
      * Merge the attributes with a another HeaderManager's attributes.
      * 
      * @param element
      *            The object to be merged with
-     * @param preferLocalValues
-     *            When both objects have a value for the same attribute, this
-     *            flag determines which value is preferred.
      * @return merged HeaderManager
      * @throws IllegalArgumentException
      *             if <code>element</code> is not an instance of
      *             {@link HeaderManager}
      */
-    public HeaderManager merge(TestElement element, boolean preferLocalValues) {
+    public HeaderManager merge(TestElement element) {
         if (!(element instanceof HeaderManager)) {
             throw new IllegalArgumentException("Cannot merge type:" + this.getClass().getName() + " with type:" + element.getClass().getName());
         }
@@ -284,16 +268,6 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
                 if (mergedHeader.getName().equalsIgnoreCase(otherHeader.getName())) {
                     // we have a match
                     found = true;
-                    if (!preferLocalValues) {
-                        // prefer values from the other object
-                        if ( (otherHeader.getValue() == null) || (otherHeader.getValue().length() == 0) ) {
-                            // the other object has an empty value, so remove this value from the merged object
-                            merged.remove(j);
-                        } else {
-                            // use the other object's value
-                            mergedHeader.setValue(otherHeader.getValue());
-                        }
-                    }
                     // break out of the inner loop
                     break;
                 }
@@ -308,5 +282,27 @@ public class HeaderManager extends ConfigTestElement implements Serializable {
         merged.setName(merged.getName() + ":" + other.getName());
 
         return merged;
+    }
+
+    @Override
+    public int replace(String regex, String replaceBy, boolean caseSensitive) throws Exception {
+        final CollectionProperty hdrs = getHeaders();
+        int totalReplaced = 0;
+        for (int i = 0; i < hdrs.size(); i++) {
+            final JMeterProperty hdr = hdrs.get(i);
+            Header head = (Header) hdr.getObjectValue();
+            String value = head.getValue();
+            if(!StringUtils.isEmpty(value)) {
+                Object[] result = JOrphanUtils.replaceAllWithRegex(value, regex, replaceBy, caseSensitive);
+                // check if there is anything to replace
+                int nbReplaced = ((Integer)result[1]).intValue();
+                if (nbReplaced>0) {
+                    String replacedText = (String) result[0];
+                    head.setValue(replacedText);
+                    totalReplaced += nbReplaced;
+                }
+            }
+        }
+        return totalReplaced;
     }
 }

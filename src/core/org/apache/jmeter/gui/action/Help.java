@@ -33,14 +33,14 @@ import org.apache.jmeter.gui.util.EscapeDialog;
 import org.apache.jmeter.swing.HtmlPane;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.ComponentUtil;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Implements the Help menu item.
  */
 public class Help extends AbstractAction {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Help.class);
 
     private static final Set<String> commands = new HashSet<>();
 
@@ -70,18 +70,9 @@ public class Help extends AbstractAction {
      */
     @Override
     public void doAction(ActionEvent e) {
-        if (helpWindow == null) {
-            helpWindow = new EscapeDialog(new Frame(),// independent frame to
-                                                    // allow it to be overlaid
-                                                    // by the main frame
-                    JMeterUtils.getResString("help"),//$NON-NLS-1$
-                    false);
-            helpWindow.getContentPane().setLayout(new GridLayout(1, 1));
-            helpWindow.getContentPane().removeAll();
-            helpWindow.getContentPane().add(scroller);
-            ComponentUtil.centerComponentInWindow(helpWindow, 60);
-        }
-        helpWindow.setVisible(true); // set the window visible immediately
+        JDialog dialog = initHelpWindow();
+        dialog.setVisible(true); // set the window visible immediately
+
         /*
          * This means that a new page will be shown before rendering is complete,
          * however the correct location will be displayed.
@@ -98,7 +89,7 @@ public class Help extends AbstractAction {
         try {
             helpDoc.setPage(url.toString()); // N.B. this only reloads if necessary (ignores the reference)
         } catch (IOException ioe) {
-            log.error(ioe.toString());
+            log.error("Error setting page for url, {}", url, ioe);
             helpDoc.setText("<html><head><title>Problem loading help page</title>"
                     + "<style><!--"
                     + ".note { background-color: #ffeeee; border: 1px solid brown; }"
@@ -111,6 +102,24 @@ public class Help extends AbstractAction {
                     + "<div>See log for more info</div>"
                     + "</body>");
         }
+    }
+
+    /**
+     * @return {@link JDialog} Help window and initializes it if necessary
+     */
+    private static JDialog initHelpWindow() {
+        if (helpWindow == null) {
+            helpWindow = new EscapeDialog(new Frame(),// independent frame to
+                                                    // allow it to be overlaid
+                                                    // by the main frame
+                    JMeterUtils.getResString("help"),//$NON-NLS-1$
+                    false);
+            helpWindow.getContentPane().setLayout(new GridLayout(1, 1));
+            helpWindow.getContentPane().removeAll();
+            helpWindow.getContentPane().add(scroller);
+            ComponentUtil.centerComponentInWindow(helpWindow, 60);
+        }
+        return helpWindow;
     }
 
     /**

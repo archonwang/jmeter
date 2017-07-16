@@ -20,26 +20,42 @@ package org.apache.jmeter.timers;
 
 import static org.junit.Assert.assertEquals;
 
+import java.util.UUID;
+
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.TestJMeterContextService;
 import org.apache.jmeter.util.BeanShellInterpreter;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.apache.jmeter.util.ScriptingTestElement;
+import org.junit.Assert;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ConstantThroughputTimerTest {
 
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(ConstantThroughputTimerTest.class);
 
     @Test
     public void testTimer1() throws Exception {
         ConstantThroughputTimer timer = new ConstantThroughputTimer();
         assertEquals(0,timer.getCalcMode());// Assume this thread only
         timer.setThroughput(60.0);// 1 per second
+        long start = System.currentTimeMillis();
         long delay = timer.delay(); // Initialise
         assertEquals(0,delay);
+        // The test tries to check if the calculated delay is correct.
+        // If the build machine is busy, then the sleep(500) may take longer in
+        // which case the calculated delay should be shorter.
+        // Since the test aims at 1 per second, the delay should be 1000 - elapsed.
+        // The test currently assumes elapsed is 500.
+       
         Thread.sleep(500);
-        assertEquals("Expected delay of approx 500", 500, timer.delay(), 50);
+        long elapsed = System.currentTimeMillis() - start;
+        long expected = 1000-elapsed; // 1 second less what has already elapsed
+        if (expected < 0) {
+            expected = 0;
+        }
+        assertEquals("Expected delay of approx 500", expected, timer.delay(), 50);
     }
 
     @Test
@@ -77,23 +93,72 @@ public class ConstantThroughputTimerTest {
     public void testTimerBSH() throws Exception {
         if (!BeanShellInterpreter.isInterpreterPresent()){
             final String msg = "BeanShell jar not present, test ignored";
-            LOG.warn(msg);
+            log.warn(msg);
             return;
         }
         BeanShellTimer timer = new BeanShellTimer();
-        long delay;
         
         timer.setScript("\"60\"");
-        delay = timer.delay();
-        assertEquals(60,delay);
+        assertEquals(60, timer.delay());
         
         timer.setScript("60");
-        delay = timer.delay();
-        assertEquals(60,delay);
+        assertEquals(60, timer.delay());
         
         timer.setScript("5*3*4");
-        delay = timer.delay();
-        assertEquals(60,delay);
+        assertEquals(60,timer.delay());
     }
-
+    
+    @Test
+    public void testTimerJSR223Timer() throws Exception {
+        JSR223Timer timer = new JSR223Timer();
+        timer.setScriptLanguage(ScriptingTestElement.DEFAULT_SCRIPT_LANGUAGE);
+        timer.setCacheKey(UUID.randomUUID().toString());
+        
+        timer.setScript("\"60\"");
+        assertEquals(60, timer.delay());
+        
+        timer.setScript("60");
+        assertEquals(60, timer.delay());
+        
+        timer.setScript("5*3*4");
+        assertEquals(60,timer.delay());
+    }
+    
+    @Test
+    public void testUniformRandomTimer() throws Exception {
+        UniformRandomTimer timer = new UniformRandomTimer();
+        timer.setDelay("1000");
+        timer.setRange(100d);
+        timer.iterationStart(null);
+        long delay = timer.delay();
+        Assert.assertTrue("delay:"+delay +" is not in expected range", delay >= 1000 && delay <=1100);
+    }
+    
+    @Test
+    public void testConstantTimer() throws Exception {
+        ConstantTimer timer = new ConstantTimer();
+        timer.setDelay("1000");
+        timer.iterationStart(null);
+        assertEquals(1000, timer.delay());
+    }
+    
+    @Test
+    public void testPoissonRandomTimerRangeHigherThan30() throws Exception {
+        PoissonRandomTimer timer = new PoissonRandomTimer();
+        timer.setDelay("300");
+        timer.setRange(100d);
+        timer.iterationStart(null);
+        long delay = timer.delay();
+        Assert.assertTrue("delay:"+delay +" is not in expected range", delay >= 356 && delay <=457);
+    }
+    
+    @Test
+    public void testPoissonRandomTimerRangeLowerThan30() throws Exception {
+        PoissonRandomTimer timer = new PoissonRandomTimer();
+        timer.setDelay("300");
+        timer.setRange(30d);
+        timer.iterationStart(null);
+        long delay = timer.delay();
+        Assert.assertTrue("delay:"+delay +" is not in expected range", delay >= 305 && delay <=362);
+    }
 }

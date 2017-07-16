@@ -23,8 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An abstract implementation of the BackendListenerClient interface. This
@@ -53,7 +53,11 @@ import org.apache.log.Logger;
  */
 public abstract class AbstractBackendListenerClient implements BackendListenerClient {
 
-    private static final Logger LOGGER = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(AbstractBackendListenerClient.class);
+
+    @SuppressWarnings("deprecation") // will be removed in 3.3
+    private static final org.apache.log.Logger oldLogger = org.apache.jorphan.logging.LoggingManager.getLoggerForClass();
+
     private UserMetric userMetrics = new UserMetric();
     
     private ConcurrentHashMap<String, SamplerMetric> metricsPerSampler = new ConcurrentHashMap<>();
@@ -61,14 +65,21 @@ public abstract class AbstractBackendListenerClient implements BackendListenerCl
     /* Implements BackendListenerClient.setupTest(BackendListenerContext) */
     @Override
     public void setupTest(BackendListenerContext context) throws Exception {
-        LOGGER.debug(getClass().getName() + ": setupTest");
+        if(log.isDebugEnabled()) {
+            log.debug("{}: setupTest", getClass().getName());
+        }
+        metricsPerSampler.clear();
+        userMetrics.clear();
     }
 
     /* Implements BackendListenerClient.teardownTest(BackendListenerContext) */
     @Override
     public void teardownTest(BackendListenerContext context) throws Exception {
-        LOGGER.debug(getClass().getName() + ": teardownTest");
+        if(log.isDebugEnabled()) {
+            log.debug("{}: teardownTest", getClass().getName());
+        }
         metricsPerSampler.clear();
+        userMetrics.clear();
     }
 
     /* Implements BackendListenerClient.getDefaultParameters() */
@@ -82,9 +93,21 @@ public abstract class AbstractBackendListenerClient implements BackendListenerCl
      * As this class is designed to be subclassed this is useful.
      *
      * @return a Logger instance which can be used for logging
+     * @deprecated Will be removed in 3.3, use {@link AbstractBackendListenerClient#getNewLogger()} 
      */
-    protected Logger getLogger() {
-        return LOGGER;
+    @Deprecated
+    protected org.apache.log.Logger getLogger() {
+        return oldLogger;
+    }
+
+    /**
+     * Get a Logger instance which can be used by subclasses to log information.
+     * As this class is designed to be subclassed this is useful.
+     *
+     * @return {@link Logger}  instance which can be used for logging
+     */
+    protected Logger getNewLogger() {
+        return log;
     }
 
     /**

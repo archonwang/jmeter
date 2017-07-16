@@ -43,8 +43,8 @@ import org.apache.jmeter.timers.Timer;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.collections.HashTree;
 import org.apache.jorphan.collections.ListedHashTree;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Set of Actions to:
@@ -60,7 +60,7 @@ import org.apache.log.Logger;
  */
 public class Start extends AbstractAction {
     
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Start.class);
 
     private static final Set<String> commands = new HashSet<>();
 
@@ -111,13 +111,13 @@ public class Start extends AbstractAction {
             startEngine(true);
         } else if (e.getActionCommand().equals(ActionNames.ACTION_STOP)) {
             if (engine != null) {
-                LOG.info("Stopping test");
+                log.info("Stopping test");
                 GuiPackage.getInstance().getMainFrame().showStoppingMessage("");
                 engine.stopTest();
             }
         } else if (e.getActionCommand().equals(ActionNames.ACTION_SHUTDOWN)) {
             if (engine != null) {
-                LOG.info("Shutting test down");
+                log.info("Shutting test down");
                 GuiPackage.getInstance().getMainFrame().showStoppingMessage("");
                 engine.askThreadsToStop();
             }
@@ -136,7 +136,7 @@ public class Start extends AbstractAction {
                 startEngine(noTimers, isValidation, tg);
             }
             else {
-                LOG.warn("No thread group selected the test will not be started");
+                log.warn("No thread group selected the test will not be started");
             }
         } 
     }
@@ -191,8 +191,10 @@ public class Start extends AbstractAction {
             removeThreadGroupsFromHashTree(testTree, threadGroupsToRun);
         }
         testTree.add(testTree.getArray()[0], gui.getMainFrame());
-        LOG.debug("test plan before cloning is running version: "
-                + ((TestPlan) testTree.getArray()[0]).isRunningVersion());
+        if (log.isDebugEnabled()) {
+            log.debug("test plan before cloning is running version: {}",
+                    ((TestPlan) testTree.getArray()[0]).isRunningVersion());
+        }
 
         ListedHashTree clonedTree = null;
         if(isValidationShot) {
@@ -203,16 +205,20 @@ public class Start extends AbstractAction {
             TreeCloner cloner = cloneTree(testTree, ignoreTimer);      
             clonedTree = cloner.getClonedTree();
         }
-        engine = new StandardJMeterEngine();
-        engine.configure(clonedTree);
-        try {
-            engine.runTest();
-        } catch (JMeterEngineException e) {
-            JOptionPane.showMessageDialog(gui.getMainFrame(), e.getMessage(), 
-                    JMeterUtils.getResString("error_occurred"), JOptionPane.ERROR_MESSAGE); //$NON-NLS-1$
+        if ( popupCheckExistingFileListener(testTree) ) {
+            engine = new StandardJMeterEngine();
+            engine.configure(clonedTree);
+            try {
+                engine.runTest();
+            } catch (JMeterEngineException e) {
+                JOptionPane.showMessageDialog(gui.getMainFrame(), e.getMessage(), 
+                        JMeterUtils.getResString("error_occurred"), JOptionPane.ERROR_MESSAGE); //$NON-NLS-1$
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("test plan after cloning and running test is running version: {}",
+                        ((TestPlan) testTree.getArray()[0]).isRunningVersion());
+            }
         }
-        LOG.debug("test plan after cloning and running test is running version: "
-                + ((TestPlan) testTree.getArray()[0]).isRunningVersion());
     }
 
     /**
@@ -225,9 +231,8 @@ public class Start extends AbstractAction {
             clazz = Class.forName(CLONER_FOR_VALIDATION_CLASS_NAME, true, Thread.currentThread().getContextClassLoader());
             return (TreeCloner) clazz.newInstance();
         } catch (InstantiationException | IllegalAccessException | ClassNotFoundException ex) {
-            LOG.error("Error instanciating class:'"
-                    +CLONER_FOR_VALIDATION_CLASS_NAME+"' defined in property :'"
-                    +VALIDATION_CLONER_CLASS_PROPERTY_NAME+"'", ex);
+            log.error("Error instantiating class:'{}' defined in property:'{}'", CLONER_FOR_VALIDATION_CLASS_NAME,
+                    VALIDATION_CLONER_CLASS_PROPERTY_NAME, ex);
             return new TreeClonerForValidation();
         }
     }

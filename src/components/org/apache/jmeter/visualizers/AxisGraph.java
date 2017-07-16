@@ -30,8 +30,6 @@ import javax.swing.JPanel;
 import javax.swing.UIManager;
 
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
 import org.jCharts.axisChart.AxisChart;
 import org.jCharts.axisChart.customRenderers.axisValue.renderers.ValueLabelPosition;
 import org.jCharts.axisChart.customRenderers.axisValue.renderers.ValueLabelRenderer;
@@ -48,6 +46,8 @@ import org.jCharts.properties.LegendProperties;
 import org.jCharts.properties.PropertyException;
 import org.jCharts.properties.util.ChartFont;
 import org.jCharts.types.ChartType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -56,9 +56,9 @@ import org.jCharts.types.ChartType;
  */
 public class AxisGraph extends JPanel {
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(AxisGraph.class);
 
     private static final String ELLIPSIS = "..."; //$NON-NLS-1$
     private static final int ELLIPSIS_LEN = ELLIPSIS.length();
@@ -70,7 +70,8 @@ public class AxisGraph extends JPanel {
     protected String yAxisLabel;
     protected int maxLength;
     protected String[] xAxisLabels;
-    protected int width, height;
+    protected int width;
+    protected int height;
     
     protected String[] legendLabels = { JMeterUtils.getResString("aggregate_graph_legend") }; // $NON-NLS-1$
     
@@ -401,14 +402,14 @@ public class AxisGraph extends JPanel {
 
             // Y Axis
             try {
-                BigDecimal round = new BigDecimal(max / 1000d);
+                BigDecimal round = BigDecimal.valueOf(max / 1000d);
                 round = round.setScale(0, BigDecimal.ROUND_UP);
                 double topValue = round.doubleValue() * 1000;
                 yaxis.setUserDefinedScale(0, 500);
                 yaxis.setNumItems((int) (topValue / 500)+1);
                 yaxis.setShowGridLines(1);
             } catch (PropertyException e) {
-                log.warn("",e);
+                log.warn("Chart property exception occurred.", e);
             }
 
             AxisProperties axisProperties= new AxisProperties(xaxis, yaxis);
@@ -429,7 +430,7 @@ public class AxisGraph extends JPanel {
             axisChart.setGraphics2D((Graphics2D) g);
             axisChart.render();
         } catch (ChartDataException | PropertyException e) {
-            log.warn("",e);
+            log.warn("Exception occurred while rendering chart.", e);
         }
     }
 

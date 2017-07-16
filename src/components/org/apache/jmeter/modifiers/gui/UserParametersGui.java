@@ -51,14 +51,14 @@ import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.GuiUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class UserParametersGui extends AbstractPreProcessorGui {
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(UserParametersGui.class);
 
     private static final String NAME_COL_RESOURCE = "name"; // $NON-NLS-1$
     private static final String USER_COL_RESOURCE = "user"; // $NON-NLS-1$
@@ -70,7 +70,12 @@ public class UserParametersGui extends AbstractPreProcessorGui {
 
     private int numUserColumns = 1;
 
-    private JButton addParameterButton, addUserButton, deleteRowButton, deleteColumnButton;
+    private JButton addParameterButton;
+    private JButton addUserButton;
+    private JButton deleteRowButton;
+    private JButton deleteColumnButton;
+    private JButton moveRowUpButton;
+    private JButton moveRowDownButton;
 
     private JCheckBox perIterationCheck;
 
@@ -128,19 +133,19 @@ public class UserParametersGui extends AbstractPreProcessorGui {
     @Override
     public void modifyTestElement(TestElement params) {
         GuiUtils.stopTableEditing(paramTable);
-        UserParameters userParams = ((UserParameters) params);
+        UserParameters userParams = (UserParameters) params;
         userParams.setNames(new CollectionProperty(UserParameters.NAMES, tableModel.getColumnData(NAME_COL_RESOURCE)));
         CollectionProperty threadLists = new CollectionProperty(UserParameters.THREAD_VALUES, new ArrayList<>());
         log.debug("making threadlists from gui");
         for (int col = 1; col < tableModel.getColumnCount(); col++) {
             threadLists.addItem(tableModel.getColumnData(getUserColName(col)));
             if (log.isDebugEnabled()) {
-                log.debug("Adding column to threadlist: " + tableModel.getColumnData(getUserColName(col)));
-                log.debug("Threadlists now = " + threadLists);
+                log.debug("Adding column to threadlist: {}", tableModel.getColumnData(getUserColName(col)));
+                log.debug("Threadlists now = {}", threadLists);
             }
         }
         if (log.isDebugEnabled()) {
-            log.debug("In the end, threadlists = " + threadLists);
+            log.debug("In the end, threadlists = {}", threadLists);
         }
         userParams.setThreadLists(threadLists);
         userParams.setPerIteration(perIterationCheck.isSelected());
@@ -198,13 +203,8 @@ public class UserParametersGui extends AbstractPreProcessorGui {
         JLabel tableLabel = new JLabel(JMeterUtils.getResString("user_parameters_table")); // $NON-NLS-1$
         initTableModel();
         paramTable = new JTable(tableModel);
-        // paramTable.setRowSelectionAllowed(true);
-        // paramTable.setColumnSelectionAllowed(true);
-        paramTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        paramTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         paramTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        // paramTable.setCellSelectionEnabled(true);
-        // paramTable.setPreferredScrollableViewportSize(new Dimension(100,
-        // 70));
         JMeterUtils.applyHiDPI(paramTable);
 
         paramPanel = new JPanel(new BorderLayout());
@@ -228,14 +228,20 @@ public class UserParametersGui extends AbstractPreProcessorGui {
         addUserButton = new JButton(JMeterUtils.getResString("add_user")); // $NON-NLS-1$
         deleteRowButton = new JButton(JMeterUtils.getResString("delete_parameter")); // $NON-NLS-1$
         deleteColumnButton = new JButton(JMeterUtils.getResString("delete_user")); // $NON-NLS-1$
+        moveRowUpButton = new JButton(JMeterUtils.getResString("up")); // $NON-NLS-1$
+        moveRowDownButton = new JButton(JMeterUtils.getResString("down")); // $NON-NLS-1$
         buttonPanel.add(addParameterButton);
         buttonPanel.add(deleteRowButton);
+        buttonPanel.add(moveRowUpButton);
         buttonPanel.add(addUserButton);
         buttonPanel.add(deleteColumnButton);
+        buttonPanel.add(moveRowDownButton);
         addParameterButton.addActionListener(new AddParamAction());
         addUserButton.addActionListener(new AddUserAction());
         deleteRowButton.addActionListener(new DeleteRowAction());
         deleteColumnButton.addActionListener(new DeleteColumnAction());
+        moveRowUpButton.addActionListener(new MoveRowUpAction());
+        moveRowDownButton.addActionListener(new MoveRowDownAction());
         return buttonPanel;
     }
 
@@ -330,26 +336,21 @@ public class UserParametersGui extends AbstractPreProcessorGui {
         public void actionPerformed(ActionEvent e) {
             GuiUtils.cancelEditing(paramTable);
 
-            int rowSelected = paramTable.getSelectedRow();
-            if (rowSelected >= 0) {
-                tableModel.removeRow(rowSelected);
+            int[] rowsSelected = paramTable.getSelectedRows();
+            if (rowsSelected.length > 0) {
+                for (int i = rowsSelected.length - 1; i >= 0; i--) {
+                    tableModel.removeRow(rowsSelected[i]);
+                }
                 tableModel.fireTableDataChanged();
 
                 // Disable DELETE if there are no rows in the table to delete.
                 if (tableModel.getRowCount() == 0) {
                     deleteRowButton.setEnabled(false);
                 }
-
-                // Table still contains one or more rows, so highlight (select)
-                // the appropriate one.
-                else {
-                    int rowToSelect = rowSelected;
-
-                    if (rowSelected >= tableModel.getRowCount()) {
-                        rowToSelect = rowSelected - 1;
-                    }
-
-                    paramTable.setRowSelectionInterval(rowToSelect, rowToSelect);
+            } else {
+                if(tableModel.getRowCount()>0) {
+                    tableModel.removeRow(0);
+                    tableModel.fireTableDataChanged();
                 }
             }
         }
@@ -388,6 +389,42 @@ public class UserParametersGui extends AbstractPreProcessorGui {
                     paramTable.setColumnSelectionInterval(colSelected, colSelected);
                 }
                 setColumnWidths();
+            }
+        }
+    }
+
+    private class MoveRowUpAction implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            int[] rowsSelected = paramTable.getSelectedRows();
+            GuiUtils.stopTableEditing(paramTable);
+
+            if (rowsSelected.length > 0 && rowsSelected[0] > 0) {
+                for (int rowSelected : rowsSelected) {
+                    tableModel.moveRow(rowSelected, rowSelected + 1, rowSelected - 1);
+                }
+
+                for (int rowSelected : rowsSelected) {
+                    paramTable.addRowSelectionInterval(rowSelected - 1, rowSelected - 1);
+                }
+            }
+        }
+    }
+
+    private class MoveRowDownAction implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            int[] rowsSelected = paramTable.getSelectedRows();
+            GuiUtils.stopTableEditing(paramTable);
+
+            if (rowsSelected.length > 0 && rowsSelected[rowsSelected.length - 1] < paramTable.getRowCount() - 1) {
+                for (int i = rowsSelected.length - 1; i >= 0; i--) {
+                    int rowSelected = rowsSelected[i];
+                    tableModel.moveRow(rowSelected, rowSelected + 1, rowSelected + 1);
+                }
+                for (int rowSelected : rowsSelected) {
+                    paramTable.addRowSelectionInterval(rowSelected + 1, rowSelected + 1);
+                }
             }
         }
     }

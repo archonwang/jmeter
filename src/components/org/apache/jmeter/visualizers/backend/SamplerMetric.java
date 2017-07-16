@@ -18,6 +18,13 @@
 
 package org.apache.jmeter.visualizers.backend;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 import org.apache.jmeter.control.TransactionController;
 import org.apache.jmeter.samplers.SampleResult;
@@ -28,24 +35,59 @@ import org.apache.jmeter.util.JMeterUtils;
  * @since 2.13
  */
 public class SamplerMetric {
-    private static final int SLIDING_WINDOW_SIZE = JMeterUtils.getPropDefault("backend_metrics_window", 100); //$NON-NLS-1$
-    
-    // Response times for OK samples
-    // Limit to sliding window of SLIDING_WINDOW_SIZE values 
-    private DescriptiveStatistics okResponsesStats = new DescriptiveStatistics(SLIDING_WINDOW_SIZE);
-    // Response times for KO samples
-    // Limit to sliding window of SLIDING_WINDOW_SIZE values 
-    private DescriptiveStatistics koResponsesStats = new DescriptiveStatistics(SLIDING_WINDOW_SIZE);
-    // Response times for All samples
-    // Limit to sliding window of SLIDING_WINDOW_SIZE values 
-    private DescriptiveStatistics allResponsesStats = new DescriptiveStatistics(SLIDING_WINDOW_SIZE);
+    private static final int SLIDING_WINDOW_SIZE = JMeterUtils.getPropDefault("backend_metrics_window", 100);
+    private static final int LARGE_SLIDING_WINDOW_SIZE = JMeterUtils.getPropDefault("backend_metrics_large_window", 5000);
+
+    private static final WindowMode WINDOW_MODE = WindowMode.get();
+
+    /**
+     * Response times for OK samples
+     */
+    private DescriptiveStatistics okResponsesStats = new DescriptiveStatistics(LARGE_SLIDING_WINDOW_SIZE);
+    /**
+     * Response times for KO samples
+     */
+    private DescriptiveStatistics koResponsesStats = new DescriptiveStatistics(LARGE_SLIDING_WINDOW_SIZE);
+    /**
+     * Response times for All samples
+     */
+    private DescriptiveStatistics allResponsesStats = new DescriptiveStatistics(LARGE_SLIDING_WINDOW_SIZE);
+    /**
+     *  OK, KO, ALL stats if WindowMode is FIXED
+     */
+    private List<DescriptiveStatistics> windowedStats = initWindowedStats();
+    /**
+     * Timeboxed percentiles don't makes sense
+     */
+    private DescriptiveStatistics pctResponseStats = new DescriptiveStatistics(LARGE_SLIDING_WINDOW_SIZE);
     private int successes;
     private int failures;
     private int hits;
+    private Map<ErrorMetric, Integer> errors = new HashMap<>();
+
+    
     /**
      * 
      */
     public SamplerMetric() {
+        List<DescriptiveStatistics> stats = new ArrayList<>(4);
+        stats.add(pctResponseStats);
+        stats.addAll(windowedStats);
+        // Limit to sliding window of SLIDING_WINDOW_SIZE values
+        for (DescriptiveStatistics stat : stats) {
+            stat.setWindowSize(SLIDING_WINDOW_SIZE);
+        }
+    }
+
+    /**
+     * @return List of {@link DescriptiveStatistics}
+     */
+    private List<DescriptiveStatistics> initWindowedStats() {
+        if (WINDOW_MODE == WindowMode.FIXED) {
+            return Arrays.asList(okResponsesStats, koResponsesStats, allResponsesStats);
+        } else {
+            return Collections.emptyList();
+        }
     }
 
     /**
@@ -57,9 +99,12 @@ public class SamplerMetric {
             successes+=result.getSampleCount()-result.getErrorCount();
         } else {
             failures+=result.getErrorCount();
-        }
+            ErrorMetric error = new ErrorMetric(result);
+            errors.put(error, errors.getOrDefault(error, 0) + result.getErrorCount() );
+        }       
         long time = result.getTime();
         allResponsesStats.addValue(time);
+        pctResponseStats.addValue(time);
         if(result.isSuccessful()) {
             // Should we also compute KO , all response time ?
             // only take successful requests for time computing
@@ -88,8 +133,20 @@ public class SamplerMetric {
      * Reset metric except for percentile related data
      */
     public synchronized void resetForTimeInterval() {
-        // We don't clear responsesStats nor usersStats as it will slide as per my understanding of 
-        // http://commons.apache.org/proper/commons-math/userguide/stat.html
+        switch (WINDOW_MODE) {
+        case FIXED:
+            // We don't clear responsesStats nor usersStats as it will slide as per my understanding of 
+            // http://commons.apache.org/proper/commons-math/userguide/stat.html
+            break;
+        case TIMED:
+            for (DescriptiveStatistics stat : windowedStats) {
+                stat.clear();
+            }
+            break;
+        default: 
+            // This cannot happen
+        }
+        errors.clear();
         successes = 0;
         failures = 0;
         hits = 0;
@@ -242,7 +299,7 @@ public class SamplerMetric {
      *         values.
      */
     public double getAllPercentile(double percentile) {
-        return allResponsesStats.getPercentile(percentile);
+        return pctResponseStats.getPercentile(percentile);
     }
 
     /**
@@ -251,5 +308,13 @@ public class SamplerMetric {
      */
     public int getHits() {
         return hits;
+    }
+    
+    /**
+     * Returns by type ( response code and message ) the count of errors occurs
+     * @return errors
+     */
+    public Map<ErrorMetric, Integer> getErrors() {
+        return errors;
     }
 }

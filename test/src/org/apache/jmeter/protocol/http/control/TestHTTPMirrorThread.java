@@ -402,15 +402,15 @@ public class TestHTTPMirrorThread extends TestCase {
         URL url = new URL("http", "localhost", HTTP_SERVER_PORT, "/");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.addRequestProperty("X-Sleep", "1000");
-        conn.connect();
         // use nanoTime to do timing measurement or calculation
         // See https://blogs.oracle.com/dholmes/entry/inside_the_hotspot_vm_clocks
         long now = System.nanoTime();
+        conn.connect();
         final InputStream inputStream = conn.getInputStream();
         while(inputStream.read() != -1) {}
         inputStream.close();
         final long elapsed = (System.nanoTime() - now)/1000000L;
-        assertTrue("Expected > 1000 " + elapsed, elapsed >= 1000);
+        assertTrue("Expected > 990 " + elapsed, elapsed >= 990);
     }
 
     /**

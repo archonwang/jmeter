@@ -46,17 +46,19 @@ import org.apache.jmeter.testelement.AbstractTestElement;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.TestIterationListener;
 import org.apache.jmeter.testelement.ThreadListener;
-import org.apache.jmeter.timers.ModifiableTimer;
 import org.apache.jmeter.timers.Timer;
+import org.apache.jmeter.timers.TimerService;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.collections.HashTree;
 import org.apache.jorphan.collections.HashTreeTraverser;
+import org.apache.jorphan.collections.ListedHashTree;
 import org.apache.jorphan.collections.SearchByClass;
-import org.apache.jorphan.logging.LoggingManager;
+import org.apache.jorphan.util.JMeterError;
 import org.apache.jorphan.util.JMeterStopTestException;
 import org.apache.jorphan.util.JMeterStopTestNowException;
 import org.apache.jorphan.util.JMeterStopThreadException;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The JMeter interface to the sampling process, allowing JMeter to see the
@@ -64,7 +66,7 @@ import org.apache.log.Logger;
  *
  */
 public class JMeterThread implements Runnable, Interruptible {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(JMeterThread.class);
 
     public static final String PACKAGE_OBJECT = "JMeterThread.pack"; // $NON-NLS-1$
 
@@ -78,10 +80,13 @@ public class JMeterThread implements Runnable, Interruptible {
 
     private static final float TIMER_FACTOR = JMeterUtils.getPropDefault("timer.factor", 1.0f);
 
+    private static final TimerService TIMER_SERVICE = TimerService.getInstance();
     /**
      * 1 as float
      */
     private static final float ONE_AS_FLOAT = 1.0f;
+
+    private static final boolean APPLY_TIMER_FACTOR = Float.compare(TIMER_FACTOR,ONE_AS_FLOAT) != 0;
 
     private final Controller threadGroupLoopController;
 
@@ -216,9 +221,9 @@ public class JMeterThread implements Runnable, Interruptible {
     private void stopSchedulerIfNeeded() {
         long now = System.currentTimeMillis();
         long delay = now - endTime;
-        if ((delay >= 0)) {
+        if (delay >= 0) {
             running = false;
-            log.info("Stopping because end time detected by thread: " + threadName);
+            log.info("Stopping because end time detected by thread: {}", threadName);
         }
     }
 
@@ -227,7 +232,7 @@ public class JMeterThread implements Runnable, Interruptible {
      *
      */
     private void startScheduler() {
-        long delay = (startTime - System.currentTimeMillis());
+        long delay = startTime - System.currentTimeMillis();
         delayBy(delay, "startScheduler");
     }
 
@@ -256,13 +261,10 @@ public class JMeterThread implements Runnable, Interruptible {
                             || (onErrorStartNextLoop
                                     && !TRUE.equals(threadContext.getVariables().get(LAST_SAMPLE_OK)))) 
                     {
-                        if(log.isDebugEnabled()) {
-                            if(onErrorStartNextLoop
-                                    && !threadContext.isRestartNextLoop()) {
-                                log.debug("StartNextLoop option is on, Last sample failed, starting next loop");
-                            }
+                        if (log.isDebugEnabled() && onErrorStartNextLoop && !threadContext.isRestartNextLoop()) {
+                            log.debug("StartNextLoop option is on, Last sample failed, starting next loop");
                         }
-                        
+
                         triggerEndOfLoopOnParentControllers(sam, threadContext);
                         sam = null;
                         threadContext.getVariables().put(LAST_SAMPLE_OK, TRUE);
@@ -275,32 +277,36 @@ public class JMeterThread implements Runnable, Interruptible {
                 
                 if (threadGroupLoopController.isDone()) {
                     running = false;
-                    log.info("Thread is done: " + threadName);
+                    log.info("Thread is done: {}", threadName);
                 }
             }
         }
-        // Might be found by contoller.next()
-        catch (JMeterStopTestException e) {
-            log.info("Stopping Test: " + e.toString());
-            stopTest();
+        // Might be found by controller.next()
+        catch (JMeterStopTestException e) { // NOSONAR
+            if (log.isInfoEnabled()) {
+                log.info("Stopping Test: {}", e.toString());
+            }
+            shutdownTest();
         }
-        catch (JMeterStopTestNowException e) {
-            log.info("Stopping Test Now: " + e.toString());
+        catch (JMeterStopTestNowException e) { // NOSONAR
+            if (log.isInfoEnabled()) {
+                log.info("Stopping Test Now: {}", e.toString());
+            }
             stopTestNow();
-        } catch (JMeterStopThreadException e) {
-            log.info("Stop Thread seen for thread " + getThreadName()+", reason:"+ e.toString());
-        } catch (Exception e) {
+        } catch (JMeterStopThreadException e) { // NOSONAR
+            if (log.isInfoEnabled()) {
+                log.info("Stop Thread seen for thread {}, reason: {}", getThreadName(), e.toString());
+            }
+        } catch (Exception | JMeterError e) {
             log.error("Test failed!", e);
         } catch (ThreadDeath e) {
             throw e; // Must not ignore this one
-        } catch (Error e) {// Make sure errors are output to the log file
-            log.error("Test failed!", e);
         } finally {
             currentSampler = null; // prevent any further interrupts
             try {
                 interruptLock.lock();  // make sure current interrupt is finished, prevent another starting yet
                 threadContext.clear();
-                log.info("Thread finished: " + threadName);
+                log.info("Thread finished: {}", threadName);
                 threadFinished(iterationListener);
                 monitor.threadFinished(this); // Tell the monitor we are done
                 JMeterContextService.removeContext(); // Remove the ThreadLocal entry
@@ -324,7 +330,8 @@ public class JMeterThread implements Runnable, Interruptible {
 
         Sampler realSampler = findRealSampler(sam);
         if(realSampler == null) {
-            throw new IllegalStateException("Got null subSampler calling findRealSampler for:"+sam.getName()+", sam:"+sam);
+            throw new IllegalStateException("Got null subSampler calling findRealSampler for:"+
+                    (sam != null ? sam.getName(): "null")+", sam:"+sam);
         }
         // Find parent controllers of current sampler
         FindTestElementsUpToRootTraverser pathToRootTraverser = new FindTestElementsUpToRootTraverser(realSampler);
@@ -422,17 +429,35 @@ public class JMeterThread implements Runnable, Interruptible {
                 // checks the scheduler to stop the iteration
                 stopSchedulerIfNeeded();
             }
-        } catch (JMeterStopTestException e) {
-            log.info("Stopping Test: " + e.toString());
-            stopTest();
-        } catch (JMeterStopThreadException e) {
-            log.info("Stopping Thread: " + e.toString());
+        } catch (JMeterStopTestException e) { // NOSONAR
+            if (log.isInfoEnabled()) {
+                log.info("Stopping Test: {}", e.toString());
+            }
+            if (current != null && current instanceof TransactionSampler) {
+                doEndTransactionSampler((TransactionSampler) current, parent, compiler.configureTransactionSampler((TransactionSampler) current), threadContext);
+            }
+            shutdownTest();
+        } catch (JMeterStopTestNowException e) { // NOSONAR
+            if (log.isInfoEnabled()) {
+                log.info("Stopping Test with interruption of current samplers: {}", e.toString());
+            }
+            if (current != null && current instanceof TransactionSampler) {
+                doEndTransactionSampler((TransactionSampler) current, parent, compiler.configureTransactionSampler((TransactionSampler) current), threadContext);
+            }
+            stopTestNow();
+        } catch (JMeterStopThreadException e) { // NOSONAR
+            if (log.isInfoEnabled()) {
+                log.info("Stopping Thread: {}", e.toString());
+            }
+            if (current != null && current instanceof TransactionSampler) {
+                doEndTransactionSampler((TransactionSampler) current, parent, compiler.configureTransactionSampler((TransactionSampler) current), threadContext);
+            }
             stopThread();
         } catch (Exception e) {
             if (current != null) {
-                log.error("Error while processing sampler '"+current.getName()+"' :", e);
+                log.error("Error while processing sampler: '{}'.", current.getName(), e);
             } else {
-                log.error("", e);
+                log.error("Error while processing sampler.", e);
             }
         }
         return transactionResult;
@@ -466,17 +491,17 @@ public class JMeterThread implements Runnable, Interruptible {
         // Perform the actual sample
         currentSampler = sampler;
         if(!sampleMonitors.isEmpty()) {
-            for(SampleMonitor monitor : sampleMonitors) {
-                monitor.sampleStarting(sampler);
+            for(SampleMonitor sampleMonitor : sampleMonitors) {
+                sampleMonitor.sampleStarting(sampler);
             }
         }
         SampleResult result = null;
         try {
-            result = sampler.sample(null); // TODO: remove this useless Entry parameter
+            result = sampler.sample(null);
         } finally {
             if(!sampleMonitors.isEmpty()) {
-                for(SampleMonitor monitor : sampleMonitors) {
-                    monitor.sampleEnded(sampler);
+                for(SampleMonitor sampleMonitor : sampleMonitors) {
+                    sampleMonitor.sampleEnded(sampler);
                 }
             }
         }
@@ -511,12 +536,21 @@ public class JMeterThread implements Runnable, Interruptible {
 
             // Check if thread or test should be stopped
             if (result.isStopThread() || (!result.isSuccessful() && onErrorStopThread)) {
+                if (transactionSampler != null) {
+                    doEndTransactionSampler(transactionSampler, current, transactionPack, threadContext);
+                }
                 stopThread();
             }
             if (result.isStopTest() || (!result.isSuccessful() && onErrorStopTest)) {
-                stopTest();
+                if (transactionSampler != null) {
+                    doEndTransactionSampler(transactionSampler, current, transactionPack, threadContext);
+                }
+                shutdownTest();
             }
             if (result.isStopTestNow() || (!result.isSuccessful() && onErrorStopTestNow)) {
+                if (transactionSampler != null) {
+                    doEndTransactionSampler(transactionSampler, current, transactionPack, threadContext);
+                }
                 stopTestNow();
             }
             if(result.isStartNextThreadLoop()) {
@@ -601,7 +635,9 @@ public class JMeterThread implements Runnable, Interruptible {
         }
 
         rampUpDelay(); // TODO - how to handle thread stopped here
-        log.info("Thread started: " + Thread.currentThread().getName());
+        if (log.isInfoEnabled()) {
+            log.info("Thread started: {}", Thread.currentThread().getName());
+        }
         /*
          * Setting SamplingStarted before the controllers are initialised allows
          * them to access the running values of functions and variables (however
@@ -665,10 +701,12 @@ public class JMeterThread implements Runnable, Interruptible {
 
         @Override
         public void subtractNode() {
+            // NOOP
         }
 
         @Override
         public void processPath() {
+            // NOOP
         }
     }
 
@@ -676,9 +714,13 @@ public class JMeterThread implements Runnable, Interruptible {
         return threadName;
     }
 
+    /**
+     * Set running flag to false which will interrupt JMeterThread on next flag test.
+     * This is a clean shutdown.
+     */
     public void stop() { // Called by StandardJMeterEngine, TestAction and AccessLogSampler
         running = false;
-        log.info("Stopping: " + threadName);
+        log.info("Stopping: {}", threadName);
     }
 
     /** {@inheritDoc} */
@@ -688,18 +730,24 @@ public class JMeterThread implements Runnable, Interruptible {
             interruptLock.lock();
             Sampler samp = currentSampler; // fetch once; must be done under lock
             if (samp instanceof Interruptible){ // (also protects against null)
-                log.warn("Interrupting: " + threadName + " sampler: " +samp.getName());
+                if (log.isWarnEnabled()) {
+                    log.warn("Interrupting: {} sampler: {}", threadName, samp.getName());
+                }
                 try {
                     boolean found = ((Interruptible)samp).interrupt();
                     if (!found) {
                         log.warn("No operation pending");
                     }
                     return found;
-                } catch (Exception e) {
-                    log.warn("Caught Exception interrupting sampler: "+e.toString());
+                } catch (Exception e) { // NOSONAR
+                    if (log.isWarnEnabled()) {
+                        log.warn("Caught Exception interrupting sampler: {}", e.toString());
+                    }
                 }
-            } else if (samp != null){
-                log.warn("Sampler is not Interruptible: "+samp.getName());
+            } else if (samp != null) {
+                if (log.isWarnEnabled()) {
+                    log.warn("Sampler is not Interruptible: {}", samp.getName());
+                }
             }
         } finally {
             interruptLock.unlock();            
@@ -707,25 +755,34 @@ public class JMeterThread implements Runnable, Interruptible {
         return false;
     }
 
-    private void stopTest() {
+    /**
+     * Clean shutdown of test, which means wait for end of current running samplers
+     */
+    private void shutdownTest() {
         running = false;
-        log.info("Stop Test detected by thread: " + threadName);
+        log.info("Shutdown Test detected by thread: {}", threadName);
         if (engine != null) {
             engine.askThreadsToStop();
         }
     }
 
+    /**
+     * Stop test immediately by interrupting running samplers
+     */
     private void stopTestNow() {
         running = false;
-        log.info("Stop Test Now detected by thread: " + threadName);
+        log.info("Stop Test Now detected by thread: {}", threadName);
         if (engine != null) {
             engine.stopTest();
         }
     }
 
+    /**
+     * Clean Exit of current thread 
+     */
     private void stopThread() {
         running = false;
-        log.info("Stop Thread detected by thread: " + threadName);
+        log.info("Stop Thread detected by thread: {}", threadName);
     }
 
     private void checkAssertions(List<Assertion> assertions, SampleResult parent, JMeterContext threadContext) {
@@ -767,13 +824,13 @@ public class JMeterThread implements Runnable, Interruptible {
             assertionResult = assertion.getResult(result);
         } catch (ThreadDeath e) {
             throw e;
-        } catch (Error e) {
-            log.error("Error processing Assertion ",e);
+        } catch (JMeterError e) {
+            log.error("Error processing Assertion.", e);
             assertionResult = new AssertionResult("Assertion failed! See log file.");
             assertionResult.setError(true);
             assertionResult.setFailureMessage(e.toString());
         } catch (Exception e) {
-            log.error("Exception processing Assertion ",e);
+            log.error("Exception processing Assertion.", e);
             assertionResult = new AssertionResult("Assertion failed! See log file.");
             assertionResult.setError(true);
             assertionResult.setFailureMessage(e.toString());
@@ -792,7 +849,7 @@ public class JMeterThread implements Runnable, Interruptible {
     private void runPreProcessors(List<PreProcessor> preProcessors) {
         for (PreProcessor ex : preProcessors) {
             if (log.isDebugEnabled()) {
-                log.debug("Running preprocessor: " + ((AbstractTestElement) ex).getName());
+                log.debug("Running preprocessor: {}", ((AbstractTestElement) ex).getName());
             }
             TestBeanHelper.prepare((TestElement) ex);
             ex.process();
@@ -804,15 +861,11 @@ public class JMeterThread implements Runnable, Interruptible {
         for (Timer timer : timers) {
             TestBeanHelper.prepare((TestElement) timer);
             long delay = timer.delay();
-            if(TIMER_FACTOR != ONE_AS_FLOAT && 
-                    // TODO Improve this with Optional methods when migration to Java8 is completed 
-                    ((timer instanceof ModifiableTimer) 
-                            && ((ModifiableTimer)timer).isModifiable())) {
-                if(log.isDebugEnabled()) {
-                    log.debug("Applying TIMER_FACTOR:"
-                            +TIMER_FACTOR + " on timer:"
-                            +((TestElement)timer).getName()
-                            + " for thread:"+getThreadName());
+            if(APPLY_TIMER_FACTOR && 
+                    timer.isModifiable()) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Applying TIMER_FACTOR:{} on timer:{} for thread:{}", TIMER_FACTOR,
+                            ((TestElement) timer).getName(), getThreadName());
                 }
                 delay = Math.round(delay * TIMER_FACTOR);
             }
@@ -823,14 +876,12 @@ public class JMeterThread implements Runnable, Interruptible {
                 if(scheduler) {
                     // We reduce pause to ensure end of test is not delayed by a sleep ending after test scheduled end
                     // See Bug 60049
-                    long now = System.currentTimeMillis();
-                    if(now + totalDelay > endTime) {
-                        totalDelay = endTime - now;
-                    }
+                    totalDelay = TIMER_SERVICE.adjustDelay(totalDelay, endTime);
                 }
                 TimeUnit.MILLISECONDS.sleep(totalDelay);
             } catch (InterruptedException e) {
                 log.warn("The delay timer was interrupted - probably did not wait as long as intended.");
+                Thread.currentThread().interrupt();
             }
         }
     }
@@ -877,7 +928,7 @@ public class JMeterThread implements Runnable, Interruptible {
         if (delay > 0) {
             long start = System.currentTimeMillis();
             long end = start + delay;
-            long now=0;
+            long now;
             long pause = RAMPUP_GRANULARITY;
             while(running && (now = System.currentTimeMillis()) < end) {
                 long togo = end - now;
@@ -887,9 +938,11 @@ public class JMeterThread implements Runnable, Interruptible {
                 try {
                     TimeUnit.MILLISECONDS.sleep(pause); // delay between checks
                 } catch (InterruptedException e) {
-                    if (running) { // Don't bother reporting stop test interruptions
-                        log.warn(type+" delay for "+threadName+" was interrupted. Waited "+(now - start)+" milli-seconds out of "+delay);
+                    if (running) { // NOSONAR running may have been changed from another thread 
+                        log.warn("{} delay for {} was interrupted. Waited {} milli-seconds out of {}", type, threadName,
+                                now - start, delay);
                     }
+                    Thread.currentThread().interrupt();
                     break;
                 }
             }
@@ -976,6 +1029,20 @@ public class JMeterThread implements Runnable, Interruptible {
 
     public void setThreadGroup(AbstractThreadGroup group) {
         this.threadGroup = group;
+    }
+
+    /**
+     * @return {@link ListedHashTree}
+     */
+    public ListedHashTree getTestTree() {
+        return (ListedHashTree) testTree;
+    }
+
+    /**
+     * @return {@link ListenerNotifier}
+     */
+    public ListenerNotifier getNotifier() {
+        return notifier;
     }
 
 }

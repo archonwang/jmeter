@@ -27,15 +27,17 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
+import org.apache.jmeter.engine.util.NoThreadClone;
 import org.apache.jmeter.samplers.SampleEvent;
 import org.apache.jmeter.samplers.SampleListener;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.services.FileServer;
 import org.apache.jmeter.testelement.AbstractTestElement;
+import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.threads.JMeterContextService;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Save Result responseData to a set of files
@@ -44,25 +46,14 @@ import org.apache.log.Logger;
  * This is mainly intended for validation tests
  *
  */
-// TODO - perhaps save other items such as headers?
-public class ResultSaver extends AbstractTestElement implements Serializable, SampleListener {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+public class ResultSaver extends AbstractTestElement implements NoThreadClone, Serializable, SampleListener, TestStateListener {
+    private static final Logger log = LoggerFactory.getLogger(ResultSaver.class);
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 242L;
 
     private static final Object LOCK = new Object();
 
-    // File name sequence number
-    //@GuardedBy("LOCK")
-    private static long sequenceNumber = 0;
-
-    //@GuardedBy("LOCK")
-    private static String timeStamp;
-
     private static final String TIMESTAMP_FORMAT = "yyyyMMdd-HHmm_"; // $NON-NLS-1$
-
-    //@GuardedBy("LOCK")
-    private static int numberPadLength;
 
     //+ JMX property names; do not change
 
@@ -84,11 +75,17 @@ public class ResultSaver extends AbstractTestElement implements Serializable, Sa
 
     //- JMX property names
 
-    private synchronized long nextNumber() {
-        return ++sequenceNumber;
-    }
+    // File name sequence number
+    //@GuardedBy("LOCK")
+    private long sequenceNumber = 0;
 
-    /*
+    //@GuardedBy("LOCK")
+    private String timeStamp;
+
+    //@GuardedBy("LOCK")
+    private int numberPadLength;
+
+    /**
      * Constructor is initially called once for each occurrence in the test plan
      * For GUI, several more instances are created Then clear is called at start
      * of test Called several times during test startup The name will not
@@ -96,29 +93,35 @@ public class ResultSaver extends AbstractTestElement implements Serializable, Sa
      */
     public ResultSaver() {
         super();
-        // log.debug(Thread.currentThread().getName());
-        // System.out.println(">> "+me+" "+this.getName()+"
-        // "+Thread.currentThread().getName());
     }
 
-    /*
-     * Constructor for use during startup (intended for non-GUI use) @param name
-     * of summariser
+    /**
+     * Constructor for use during startup (intended for non-GUI use) 
+     * @param name of summariser
      */
     public ResultSaver(String name) {
         this();
         setName(name);
     }
 
-    /*
-     * This is called once for each occurrence in the test plan, before the
-     * start of the test. The super.clear() method clears the name (and all
-     * other properties), so it is called last.
+    /**
+     * @return next number across all instances
      */
+    private long nextNumber() {
+        synchronized(LOCK) {
+            return ++sequenceNumber;
+        }
+    }    
+
     @Override
-    public void clear() {
+    public void testStarted() {
+        testStarted(""); //$NON-NLS-1$
+    }
+
+    @Override
+    public void testStarted(String host) {
         synchronized(LOCK){
-            sequenceNumber = 0; // TODO is this the right thing to do?
+            sequenceNumber = 0;
             if (getAddTimeStamp()) {
                 DateFormat format = new SimpleDateFormat(TIMESTAMP_FORMAT);
                 timeStamp = format.format(new Date());
@@ -127,7 +130,16 @@ public class ResultSaver extends AbstractTestElement implements Serializable, Sa
             }
             numberPadLength=getNumberPadLen();
         }
-        super.clear();
+    }
+
+    @Override
+    public void testEnded() {
+        testEnded(""); //$NON-NLS-1$
+    }
+
+    @Override
+    public void testEnded(String host) {
+        
     }
 
     /**
@@ -171,7 +183,9 @@ public class ResultSaver extends AbstractTestElement implements Serializable, Sa
         }
 
         String fileName = makeFileName(s.getContentType(), getSkipAutoNumber(), getSkipSuffix());
-        log.debug("Saving " + s.getSampleLabel() + " in " + fileName);
+        if (log.isDebugEnabled()) {
+            log.debug("Saving {} in {}", s.getSampleLabel(), fileName);
+        }
         s.setResultFileName(fileName);// Associate sample with file name
         String variable = getVariableName();
         if (variable.length()>0){
@@ -183,25 +197,24 @@ public class ResultSaver extends AbstractTestElement implements Serializable, Sa
             JMeterContextService.getContext().getVariables().put(variable, fileName);
         }
         File out = new File(fileName);
-        FileOutputStream pw = null;
-        try {
-            pw = new FileOutputStream(out);
-            JOrphanUtils.write(s.getResponseData(), pw); // chunk the output if necessary
-        } catch (FileNotFoundException e1) {
-            log.error("Error creating sample file for " + s.getSampleLabel(), e1);
-        } catch (IOException e1) {
-            log.error("Error saving sample " + s.getSampleLabel(), e1);
-        } finally {
-            JOrphanUtils.closeQuietly(pw);
+        try (FileOutputStream fos = new FileOutputStream(out)){
+            JOrphanUtils.write(s.getResponseData(), fos); // chunk the output if necessary
+        } catch (FileNotFoundException e) {
+            log.error("Error creating sample file for {}", s.getSampleLabel(), e);
+        } catch (IOException e) {
+            log.error("Error saving sample {}", s.getSampleLabel(), e);
         }
     }
 
     /**
+     * @param contentType Content type
+     * @param skipAutoNumber Skip auto number
+     * @param skipSuffix Skip suffix
      * @return fileName composed of fixed prefix, a number, and a suffix derived
      *         from the contentType e.g. Content-Type:
      *         text/html;charset=ISO-8859-1
      */
-    private String makeFileName(String contentType, boolean skipAutoNumber, boolean skipSuffix) {
+    String makeFileName(String contentType, boolean skipAutoNumber, boolean skipSuffix) {
         StringBuilder sb = new StringBuilder(FileServer.resolveBaseRelativeName(getFilename()));
         sb.append(timeStamp); // may be the empty string
         if (!skipAutoNumber){

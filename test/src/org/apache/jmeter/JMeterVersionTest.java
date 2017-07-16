@@ -54,7 +54,6 @@ public class JMeterVersionTest extends JMeterTestCase {
         JAR_TO_BUILD_PROP.put("bsf", "apache-bsf");
         JAR_TO_BUILD_PROP.put("bsh", "beanshell");
         JAR_TO_BUILD_PROP.put("geronimo-jms_1.1_spec", "jms");
-        JAR_TO_BUILD_PROP.put("httpmime", "httpclient"); // two jars same version
         JAR_TO_BUILD_PROP.put("mail", "javamail");
         JAR_TO_BUILD_PROP.put("oro", "jakarta-oro");
         JAR_TO_BUILD_PROP.put("xercesImpl", "xerces");
@@ -115,9 +114,11 @@ public class JMeterVersionTest extends JMeterTestCase {
         versions.remove("rat");
         propNames.remove("rat-tasks");
         versions.remove("rat-tasks");
-        // remove optional jacoco jars (required for coverage reporting, not required for jmeter)
-        propNames.remove("jacocoant");
-        versions.remove("jacocoant");
+        // remove optional jacoco and sonar jars (required for coverage reporting, not required for jmeter)
+        for (String optLib : Arrays.asList("jacocoant", "sonarqube-ant-task")) {
+            propNames.remove(optLib);
+            versions.remove(optLib);
+        }
         prop = buildProp;
         final File licencesDir = getFileFromHome("licenses/bin");
         licencesDir.list(new FilenameFilter() {
@@ -200,7 +201,8 @@ public class JMeterVersionTest extends JMeterTestCase {
         final BufferedReader maven = new BufferedReader(
                 new FileReader(getFileFromHome("res/maven/ApacheJMeter_parent.pom"))); // assume default charset is OK here
 //      <apache-bsf.version>2.4.0</apache-bsf.version>
-        final Pattern p = Pattern.compile("\\s+<([^\\.]+)\\.version>([^<]+)<.*");
+//      <log4j-1.2-api.version>2.7</log4j-1.2-api.version>
+        final Pattern p = Pattern.compile("\\s+<([^\\<\\>]+)\\.version>([^<]+)<.*");
 
         String line;
         while((line=maven.readLine()) != null){
@@ -253,7 +255,7 @@ public class JMeterVersionTest extends JMeterTestCase {
               binaryJarNames.add(jarName);                
             }
         }
-        // Extract the jar names fron LICENSE
+        // Extract the jar names from LICENSE
         final BufferedReader license = new BufferedReader(
                 new FileReader(getFileFromHome("LICENSE"))); // assume default charset is OK here
         final Pattern p = Pattern.compile("^\\* (\\S+?)\\.jar(.*)");

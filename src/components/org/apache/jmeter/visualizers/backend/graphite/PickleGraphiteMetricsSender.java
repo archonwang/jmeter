@@ -25,8 +25,8 @@ import java.util.LinkedList;
 import java.util.List;
 
 import org.apache.commons.pool2.impl.GenericKeyedObjectPool;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Pickle Graphite format 
@@ -35,7 +35,7 @@ import org.apache.log.Logger;
  * @since 2.13
  */
 class PickleGraphiteMetricsSender extends AbstractGraphiteMetricsSender {
-    private static final Logger LOG = LoggingManager.getLoggerForClass();    
+    private static final Logger log = LoggerFactory.getLogger(PickleGraphiteMetricsSender.class);
 
     /**
      * Pickle opcodes needed for implementation
@@ -51,6 +51,8 @@ class PickleGraphiteMetricsSender extends AbstractGraphiteMetricsSender {
     private static final char LF = '\n';
         
     private String prefix;
+
+    private final Object lock = new Object();
 
     // graphite expects a python-pickled list of nested tuples.
     private List<MetricTuple> metrics = new LinkedList<>();
@@ -75,9 +77,8 @@ class PickleGraphiteMetricsSender extends AbstractGraphiteMetricsSender {
         this.socketConnectionInfos = new SocketConnectionInfos(graphiteHost, graphitePort);
         this.socketOutputStreamPool = createSocketOutputStreamPool();
 
-        if(LOG.isInfoEnabled()) {
-            LOG.info("Created PickleGraphiteMetricsSender with host:"+graphiteHost+", port:"+graphitePort+", prefix:"+prefix);
-        }
+        log.info("Created PickleGraphiteMetricsSender with host: {}, port: {}, prefix: {}", graphiteHost, graphitePort,
+                prefix);
     }
     
     /* (non-Javadoc)
@@ -91,18 +92,29 @@ class PickleGraphiteMetricsSender extends AbstractGraphiteMetricsSender {
             .append(contextName)
             .append(".")
             .append(metricName);
-        metrics.add(new MetricTuple(sb.toString(), timestamp, metricValue));
+        synchronized (lock) {
+            metrics.add(new MetricTuple(sb.toString(), timestamp, metricValue));
+        }
     }
 
     /* (non-Javadoc)
      * @see org.apache.jmeter.visualizers.backend.graphite.GraphiteMetricsSender#writeAndSendMetrics()
      */
     @Override
-    public void writeAndSendMetrics() {        
-        if (metrics.size()>0) {
+    public void writeAndSendMetrics() {    
+        List<MetricTuple> tempMetrics;
+        synchronized (lock) {
+            if(metrics.isEmpty()) {
+                return;
+            }
+            tempMetrics = metrics;
+            metrics = new LinkedList<>();            
+        }
+        final List<MetricTuple> copyMetrics = tempMetrics;
+        if (!copyMetrics.isEmpty()) {
             SocketOutputStream out = null;
             try {
-                String payload = convertMetricsToPickleFormat(metrics);
+                String payload = convertMetricsToPickleFormat(copyMetrics);
 
                 int length = payload.length();
                 byte[] header = ByteBuffer.allocate(4).putInt(length).array();
@@ -119,18 +131,19 @@ class PickleGraphiteMetricsSender extends AbstractGraphiteMetricsSender {
                     try {
                         socketOutputStreamPool.invalidateObject(socketConnectionInfos, out);
                     } catch (Exception e1) {
-                        LOG.warn("Exception invalidating socketOutputStream connected to graphite server '"+socketConnectionInfos.getHost()+"':"+socketConnectionInfos.getPort(), e1);
+                        log.warn("Exception invalidating socketOutputStream connected to graphite server. '{}':{}",
+                                socketConnectionInfos.getHost(), socketConnectionInfos.getPort(), e1);
                     }
                 }
-                LOG.error("Error writing to Graphite:"+e.getMessage());
+                log.error("Error writing to Graphite: {}", e.getMessage());
             }
             
             // if there was an error, we might miss some data. for now, drop those on the floor and
             // try to keep going.
-            if(LOG.isDebugEnabled()) {
-                LOG.debug("Wrote "+ metrics.size() +" metrics");
+            if (log.isDebugEnabled()) {
+                log.debug("Wrote {} metrics", copyMetrics.size());
             }
-            metrics.clear();
+            copyMetrics.clear();
         }
     }
 

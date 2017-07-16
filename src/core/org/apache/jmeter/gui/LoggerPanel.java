@@ -25,42 +25,54 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.ScrollPaneConstants;
-import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 
+import org.apache.commons.collections.Buffer;
+import org.apache.commons.collections.buffer.CircularFifoBuffer;
+import org.apache.commons.collections.buffer.UnboundedFifoBuffer;
+import org.apache.jmeter.gui.logging.GuiLogEventListener;
+import org.apache.jmeter.gui.logging.LogEventObject;
 import org.apache.jmeter.gui.util.JSyntaxTextArea;
 import org.apache.jmeter.gui.util.JTextScrollPane;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.LogEvent;
-import org.apache.log.LogTarget;
-import org.apache.log.format.PatternFormatter;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 
 /**
  * Panel that shows log events
  */
-public class LoggerPanel extends JPanel implements LogTarget {
+public class LoggerPanel extends JPanel implements GuiLogEventListener {
 
     private static final long serialVersionUID = 6911128494402594429L;
 
     private final JTextArea textArea;
 
-    private final PatternFormatter format;
+    // Limit length of log content 
+    // 0 means unlimited
+    private static final int LOGGER_PANEL_MAX_LINES =
+            JMeterUtils.getPropDefault("jmeter.loggerpanel.maxlength", 1000); // $NON-NLS-1$
 
-    // Limit length of log content
-    private static final int LOGGER_PANEL_MAX_LENGTH =
-            JMeterUtils.getPropDefault("jmeter.loggerpanel.maxlength", 80000); // $NON-NLS-1$
-    
     // Make panel handle event even if closed
     private static final boolean LOGGER_PANEL_RECEIVE_WHEN_CLOSED =
             JMeterUtils.getPropDefault("jmeter.loggerpanel.enable_when_closed", true); // $NON-NLS-1$
+
+    private static final int LOGGER_PANEL_REFRESH_PERIOD =
+            JMeterUtils.getPropDefault("jmeter.gui.refresh_period", 500); // $NON-NLS-1$
+
+    private final Buffer events;
+
+    private volatile boolean logChanged = false;
 
     /**
      * Pane for display JMeter log file
      */
     public LoggerPanel() {
+        if (LOGGER_PANEL_MAX_LINES > 0) {
+            events =
+                    new CircularFifoBuffer(LOGGER_PANEL_MAX_LINES);
+        } else {
+            events = new UnboundedFifoBuffer();
+        }
         textArea = init();
-        format = new PatternFormatter(LoggingManager.DEFAULT_PATTERN + "\n"); // $NON-NLS-1$
     }
 
     private JTextArea init() { // WARNING: called from ctor so must not be overridden (i.e. must be private or final)
@@ -89,39 +101,66 @@ public class LoggerPanel extends JPanel implements LogTarget {
         areaScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         areaScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         this.add(areaScrollPane, BorderLayout.CENTER);
+
+        initWorker();
+
         return jTextArea;
     }
 
     /* (non-Javadoc)
-     * @see org.apache.log.LogTarget#processEvent(org.apache.log.LogEvent)
+     * @see org.apache.jmeter.gui.logging.GuiLogEventListener#processLogEvent(org.apache.jmeter.gui.logging.LogEventObject)
      */
+    @SuppressWarnings("unchecked")
     @Override
-    public void processEvent(final LogEvent logEvent) {
+    public void processLogEvent(final LogEventObject logEventObject) {
         if(!LOGGER_PANEL_RECEIVE_WHEN_CLOSED && !GuiPackage.getInstance().getMenuItemLoggerPanel().getModel().isSelected()) {
             return;
         }
-        
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                synchronized (textArea) {
-                    textArea.append(format.format(logEvent));
-                    int currentLength = textArea.getText().length();
-                    // If LOGGER_PANEL_MAX_LENGTH is 0, it means all log events are kept
-                    if(LOGGER_PANEL_MAX_LENGTH != 0 && currentLength> LOGGER_PANEL_MAX_LENGTH) {
-                        textArea.setText(textArea.getText().substring(Math.max(0, currentLength-LOGGER_PANEL_MAX_LENGTH), 
-                                currentLength));
-                    }
-                    textArea.setCaretPosition(textArea.getText().length());
-                }
+
+        String logMessage = logEventObject.toString();
+        synchronized (events) {
+            events.add(logMessage);
+        }
+
+        logChanged = true;
+    }
+
+    private void initWorker() {
+        Timer timer = new Timer(
+            LOGGER_PANEL_REFRESH_PERIOD,
+            e -> updateLogEntries());
+        timer.start();
+    }
+
+    private void updateLogEntries() {
+        if (!logChanged) {
+            return;
+        }
+        logChanged = false;
+        StringBuilder builder = new StringBuilder();
+        synchronized (events) {
+            for (Object line: events) {
+                builder.append((String) line);
             }
-        });
+        }
+        String logText = builder.toString();
+        synchronized (textArea) {
+            if (LOGGER_PANEL_MAX_LINES > 0) {
+                textArea.setText(logText);
+            } else {
+                textArea.append(logText);
+            }
+            textArea.setCaretPosition(textArea.getText().length());
+        }
     }
 
     /**
      * Clear panel content
      */
     public void clear() {
-        this.textArea.setText(""); // $NON-NLS-1$
+        synchronized (events) {
+            events.clear();
+        }
+        logChanged = true;
     }
 }

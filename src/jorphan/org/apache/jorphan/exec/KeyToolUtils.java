@@ -30,14 +30,14 @@ import java.util.List;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.SystemUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utilities for working with Java keytool
  */
 public class KeyToolUtils {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(KeyToolUtils.class);
 
     // The DNAME which is used if none is provided
     private static final String DEFAULT_DNAME = "cn=JMeter Proxy (DO NOT TRUST)";  // $NON-NLS-1$
@@ -51,6 +51,16 @@ public class KeyToolUtils {
 
     /** Name of property that can be used to override the default keytool location */
     private static final String KEYTOOL_DIRECTORY = "keytool.directory"; // $NON-NLS-1$
+    
+    private static final String DNAME_INTERMEDIATE_CA_KEY  = "cn=DO NOT INSTALL THIS CERTIFICATE (JMeter Intermediate CA)"; // $NON-NLS-1$
+
+    public static final String ROOT_CACERT_CRT_PFX = "ApacheJMeterTemporaryRootCA"; // $NON-NLS-1$ (do not change)
+    private static final String ROOT_CACERT_CRT = ROOT_CACERT_CRT_PFX + ".crt"; // $NON-NLS-1$ (Firefox and Windows)
+    private static final String ROOT_CACERT_USR = ROOT_CACERT_CRT_PFX + ".usr"; // $NON-NLS-1$ (Opera)
+
+    private static final String ROOTCA_ALIAS = ":root_ca:";  // $NON-NLS-1$
+    private static final String INTERMEDIATE_CA_ALIAS = ":intermediate_ca:";  // $NON-NLS-1$
+
 
     /**
      * Where to find the keytool application.
@@ -58,13 +68,6 @@ public class KeyToolUtils {
      */
     private static final String KEYTOOL_PATH;
 
-    private static void addElement(StringBuilder sb, String prefix, String value) {
-        if (value != null) {
-            sb.append(", ");
-            sb.append(prefix);
-            sb.append(value);
-        }
-    }
 
     static {
         StringBuilder sb = new StringBuilder();
@@ -81,9 +84,9 @@ public class KeyToolUtils {
 
         String keytoolPath; // work field
         if (keytoolDir != null) {
-            keytoolPath = new File(new File(keytoolDir),KEYTOOL).getPath();
-        if (!checkKeytool(keytoolPath)) {
-                log.error("Cannot find keytool using property " + KEYTOOL_DIRECTORY + "="+keytoolDir);
+            keytoolPath = new File(new File(keytoolDir), KEYTOOL).getPath();
+            if (!checkKeytool(keytoolPath)) {
+                log.error("Cannot find keytool using property " + KEYTOOL_DIRECTORY + "=" + keytoolDir);
                 keytoolPath = null; // don't try anything else if the property is provided
             }
         } else {
@@ -91,7 +94,7 @@ public class KeyToolUtils {
             if (!checkKeytool(keytoolPath)) { // Not found on PATH, check Java Home
                 File javaHome = SystemUtils.getJavaHome();
                 if (javaHome != null) {
-                    keytoolPath = new File(new File(javaHome,"bin"),KEYTOOL).getPath(); // $NON-NLS-1$
+                    keytoolPath = new File(new File(javaHome, "bin"), KEYTOOL).getPath(); // $NON-NLS-1$
                     if (!checkKeytool(keytoolPath)) {
                         keytoolPath = null;
                     }
@@ -108,19 +111,20 @@ public class KeyToolUtils {
         KEYTOOL_PATH = keytoolPath;
     }
 
-    private static final String DNAME_INTERMEDIATE_CA_KEY  = "cn=DO NOT INSTALL THIS CERTIFICATE (JMeter Intermediate CA)"; // $NON-NLS-1$
-
-    public static final String ROOT_CACERT_CRT_PFX = "ApacheJMeterTemporaryRootCA"; // $NON-NLS-1$ (do not change)
-    private static final String ROOT_CACERT_CRT = ROOT_CACERT_CRT_PFX + ".crt"; // $NON-NLS-1$ (Firefox and Windows)
-    private static final String ROOT_CACERT_USR = ROOT_CACERT_CRT_PFX + ".usr"; // $NON-NLS-1$ (Opera)
-
-    private static final String ROOTCA_ALIAS = ":root_ca:";  // $NON-NLS-1$
-    private static final String INTERMEDIATE_CA_ALIAS = ":intermediate_ca:";  // $NON-NLS-1$
 
     private KeyToolUtils() {
         // not instantiable
     }
 
+
+    private static void addElement(StringBuilder sb, String prefix, String value) {
+        if (value != null) {
+            sb.append(", ");
+            sb.append(prefix);
+            sb.append(value);
+        }
+    }
+    
     /**
      * Generate a self-signed keypair using the algorithm "RSA".
      *
@@ -166,7 +170,7 @@ public class KeyToolUtils {
                     + "\nCommand failed, code: " + exitVal
                     + "\n'" + formatCommand(arguments)+"'");
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException e) { // NOSONAR
             throw new IOException("Command was interrupted\n" + nativeCommand.getOutResult(), e);
         }
     }
@@ -189,9 +193,9 @@ public class KeyToolUtils {
                 builder.append("\"");
             }
             builder.append(" ");
-            redact = string.equals("-storepass") || string.equals("-keypass");
+            redact = "-storepass".equals(string) || "-keypass".equals(string);
         }
-        if (arguments.size() > 0) {
+        if (!arguments.isEmpty()) {
             builder.setLength(builder.length() - 1); // trim trailing space
         }
         return builder.toString();
@@ -285,7 +289,7 @@ public class KeyToolUtils {
         KeyToolUtils.keytool("-certreq", keystore, password, alias, null, certReqOut);
 
         // create the certificate
-        //rem ku:c=dig,keyE means KeyUsage:criticial=digitalSignature,keyEncipherment
+        //rem ku:c=dig,keyE means KeyUsage:critical=digitalSignature,keyEncipherment
         InputStream certReqIn = new ByteArrayInputStream(certReqOut.toByteArray());
         ByteArrayOutputStream certOut = new ByteArrayOutputStream();
         KeyToolUtils.keytool("-gencert", keystore, password, INTERMEDIATE_CA_ALIAS, certReqIn, certOut, "-ext", "ku:c=dig,keyE");
@@ -333,7 +337,7 @@ public class KeyToolUtils {
             if (exitVal != 0) {
                 throw new IOException("Command failed, code: " + exitVal + "\n" + nativeCommand.getOutResult());
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException e) { // NOSONAR 
             throw new IOException("Command was interrupted\n" + nativeCommand.getOutResult(), e);
         }
     }
@@ -362,7 +366,7 @@ public class KeyToolUtils {
      * @param command
      *            the command, not null
      * @param keystore
-     *            the keystore, not nill
+     *            the keystore, not null
      * @param password
      *            the password used for keystore and key, not null
      * @param alias
@@ -440,8 +444,10 @@ public class KeyToolUtils {
              */
             return status == 0 || status == 1; // TODO this is rather fragile
         } catch (IOException ioe) {
+            log.info("Exception checking for keytool existence, will return false, try another way.");
+            log.debug("Exception is: ", ioe);
             return false;
-        } catch (InterruptedException e) {
+        } catch (InterruptedException e) { // NOSONAR
             log.error("Command was interrupted\n" + nativeCommand.getOutResult(), e);
             return false;
         }

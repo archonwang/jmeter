@@ -17,8 +17,6 @@
  */
 package org.apache.jmeter.report.processor;
 
-import org.apache.commons.lang3.StringEscapeUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.report.core.Sample;
 import org.apache.jmeter.util.JMeterUtils;
 
@@ -38,7 +36,7 @@ public class Top5ErrorsBySamplerConsumer extends
      * Instantiates a new Top5 Errors by sampler consumer.
      */
     public Top5ErrorsBySamplerConsumer() {
-        super(true);
+        super(false);
     }
 
     /**
@@ -57,27 +55,10 @@ public class Top5ErrorsBySamplerConsumer extends
         }
         
         if(!sample.getSuccess()) {
-            data.registerError(getError(sample));
+            data.registerError(ErrorsSummaryConsumer.getErrorKey(sample));
             data.incErrors();
         }
         data.incTotal();
-    }
-    
-    private String getError(Sample sample) {
-        String responseCode = sample.getResponseCode();
-        String responseMessage = sample.getResponseMessage();
-        String key = responseCode + (!StringUtils.isEmpty(responseMessage) ? 
-                 "/" + StringEscapeUtils.escapeJson(responseMessage) : "");
-        if (ErrorsSummaryConsumer.isSuccessCode(responseCode)) {
-            key = ErrorsSummaryConsumer.ASSERTION_FAILED;
-            if (ErrorsSummaryConsumer.ASSERTION_RESULTS_FAILURE_MESSAGE) {
-                String msg = sample.getFailureMessage();
-                if (!StringUtils.isEmpty(msg)) {
-                    key = StringEscapeUtils.escapeJson(msg);
-                }
-            }
-        }
-        return key;
     }
 
     /*
@@ -182,7 +163,7 @@ public class Top5ErrorsBySamplerConsumer extends
     }
 
     /**
-     * @param ignoreTCFromTop5ErrorsBySampler
+     * @param ignoreTCFromTop5ErrorsBySampler ignore transaction controller sampler results when computing top 5
      */
     public void setIgnoreTransactionController(
             boolean ignoreTCFromTop5ErrorsBySampler) {

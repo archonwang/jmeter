@@ -80,6 +80,8 @@ import org.apache.jmeter.gui.action.ActionNames;
 import org.apache.jmeter.gui.action.ActionRouter;
 import org.apache.jmeter.gui.action.KeyStrokes;
 import org.apache.jmeter.gui.action.LoadDraggedFile;
+import org.apache.jmeter.gui.logging.GuiLogEventListener;
+import org.apache.jmeter.gui.logging.LogEventObject;
 import org.apache.jmeter.gui.tree.JMeterCellRenderer;
 import org.apache.jmeter.gui.tree.JMeterTreeListener;
 import org.apache.jmeter.gui.tree.JMeterTreeNode;
@@ -96,12 +98,9 @@ import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.ComponentUtil;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.LogEvent;
-import org.apache.log.LogTarget;
-import org.apache.log.Logger;
-import org.apache.log.Priority;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The main JMeter frame, containing the menu bar, test tree, and an area for
@@ -110,7 +109,7 @@ import org.apache.log.Priority;
  */
 public class MainFrame extends JFrame implements TestStateListener, Remoteable, DropTargetListener, Clearable, ActionListener {
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
     // This is used to keep track of local (non-remote) tests
     // The name is chosen to be an unlikely host-name
@@ -127,7 +126,7 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
     private static final boolean DISPLAY_LOGGER_PANEL =
             JMeterUtils.getPropDefault("jmeter.loggerpanel.display", false); // $NON-NLS-1$
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(MainFrame.class);
 
     /** The menu bar. */
     private JMeterMenuBar menuBar;
@@ -187,13 +186,13 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
      */
     private transient ErrorsAndFatalsCounterLogTarget errorsAndFatalsCounterLogTarget;
     
-    private javax.swing.Timer computeTestDurationTimer = new javax.swing.Timer(1000, new java.awt.event.ActionListener() {
-        
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            computeTestDuration();
-        }
-    });
+    private javax.swing.Timer computeTestDurationTimer = new javax.swing.Timer(1000, 
+            this::computeTestDuration);
+    
+    public AtomicInteger errorOrFatal = new AtomicInteger(0);
+
+    private javax.swing.Timer refreshErrorsTimer = new javax.swing.Timer(1000, 
+            this::refreshErrors);
 
     /**
      * Create a new JMeter frame.
@@ -241,9 +240,33 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
         init();
         initTopLevelDndHandler();
         setDefaultCloseOperation(DO_NOTHING_ON_CLOSE);
+        
+        addMouseWheelListener(e -> {
+            if (e.isControlDown()) {
+                final float scale = 1.1f;
+                int rotation = e.getWheelRotation();
+                if (rotation > 0) { // DOWN
+                    JMeterUtils.applyScaleOnFonts(1.0f/scale);
+                } else if (rotation < 0) { // UP
+                    JMeterUtils.applyScaleOnFonts(scale);
+                }
+                e.consume();
+            }
+        });
     }
 
-    protected void computeTestDuration() {
+    /**
+     * Refresh errors label
+     * @param evt {@link ActionEvent}
+     */
+    private void refreshErrors(ActionEvent evt) {
+        if(errorOrFatal.get()>0) {
+            errorsOrFatalsLabel.setForeground(Color.RED);
+            errorsOrFatalsLabel.setText(Long.toString(errorOrFatal.get()));
+        }
+    }
+    
+    protected void computeTestDuration(ActionEvent evt) {
         long startTime = JMeterContextService.getTestStartTime();
         if (startTime > 0) {
             long elapsedSec = (System.currentTimeMillis()-startTime + 500) / 1000; // rounded seconds
@@ -384,23 +407,17 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
         stoppingMessage.getContentPane().add(stopLabel);
         stoppingMessage.pack();
         ComponentUtil.centerComponentInComponent(this, stoppingMessage);
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
+        SwingUtilities.invokeLater(() -> {
                 if (stoppingMessage != null) { // TODO - how can this be null?
                     stoppingMessage.setVisible(true);
                 }
-            }
         });
     }
 
     public void updateCounts() {
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
+        SwingUtilities.invokeLater(() -> {
                 activeThreads.setText(Integer.toString(JMeterContextService.getNumberOfThreads()));
                 totalThreads.setText(Integer.toString(JMeterContextService.getTotalThreads()));
-            }
         });
     }
 
@@ -513,10 +530,8 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
 
         logPanel = createLoggerPanel();
         errorsAndFatalsCounterLogTarget = new ErrorsAndFatalsCounterLogTarget();
-        LoggingManager.addLogTargetToRootLogger(new LogTarget[]{
-                logPanel,
-                errorsAndFatalsCounterLogTarget
-        });
+        GuiPackage.getInstance().getLogEventBus().registerEventListener(logPanel);
+        GuiPackage.getInstance().getLogEventBus().registerEventListener(errorsAndFatalsCounterLogTarget);
 
         topAndDown.setTopComponent(mainPanel);
         topAndDown.setBottomComponent(logPanel);
@@ -536,6 +551,7 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
         setTitle(DEFAULT_TITLE);
         setIconImage(JMeterUtils.getImage("icon-apache.png").getImage());// $NON-NLS-1$
         setWindowTitle(); // define AWT WM_CLASS string
+        refreshErrorsTimer.start();
     }
 
 
@@ -687,10 +703,10 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
             public void actionPerformed(ActionEvent actionEvent) {
                 String propname = "gui.quick_" + actionEvent.getActionCommand();
                 String comp = JMeterUtils.getProperty(propname);
-                log.debug("Event " + propname + ": " + comp);
+                log.debug("Event {}: {}", propname, comp);
 
                 if (comp == null) {
-                    log.warn("No component set through property: " + propname);
+                    log.warn("No component set through property: {}", propname);
                     return;
                 }
 
@@ -709,7 +725,7 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
                         guiPackage.getMainFrame().getTree().setSelectionPath(new TreePath(node.getPath()));
                     }
                 } catch (Exception err) {
-                    log.warn("Failed to perform quick component add: " + comp, err); // $NON-NLS-1$
+                    log.warn("Failed to perform quick component add: {}", comp, err); // $NON-NLS-1$
                 }
             }
         };
@@ -789,7 +805,7 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
                 }
             }
         } catch (UnsupportedFlavorException | IOException e) {
-            log.warn("Dnd failed" , e);
+            log.warn("Dnd failed", e);
         }
 
     }
@@ -803,7 +819,9 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
         }
         File file = files.get(0);
         if (!file.getName().endsWith(".jmx")) {
-            log.warn("Importing file:" + file.getName()+ "from DnD failed because file extension does not end with .jmx");
+            if (log.isWarnEnabled()) {
+                log.warn("Importing file, {}, from DnD failed because file extension does not end with .jmx", file.getName());
+            }
             return false;
         }
 
@@ -819,37 +837,26 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
     }
 
     /**
-     *
+     * ErrorsAndFatalsCounterLogTarget.
      */
-    public final class ErrorsAndFatalsCounterLogTarget implements LogTarget, Clearable {
-        public AtomicInteger errorOrFatal = new AtomicInteger(0);
+    public final class ErrorsAndFatalsCounterLogTarget implements GuiLogEventListener, Clearable {
 
         @Override
-        public void processEvent(LogEvent event) {
-            if(event.getPriority().equals(Priority.ERROR) ||
-                    event.getPriority().equals(Priority.FATAL_ERROR)) {
-                final int newValue = errorOrFatal.incrementAndGet();
-                SwingUtilities.invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        errorsOrFatalsLabel.setForeground(Color.RED);
-                        errorsOrFatalsLabel.setText(Integer.toString(newValue));
-                    }
-                });
+        public void processLogEvent(LogEventObject logEventObject) {
+            if (logEventObject.isMoreSpecificThanError()) {
+                errorOrFatal.incrementAndGet();
             }
         }
 
         @Override
         public void clearData() {
             errorOrFatal.set(0);
-            SwingUtilities.invokeLater(new Runnable() {
-                @Override
-                public void run() {
+            SwingUtilities.invokeLater(() -> {
                     errorsOrFatalsLabel.setForeground(Color.BLACK);
                     errorsOrFatalsLabel.setText(Integer.toString(errorOrFatal.get()));
-                }
-            });
+                });
         }
+
     }
 
 
@@ -874,13 +881,15 @@ public class MainFrame extends JFrame implements TestStateListener, Remoteable, 
      */
     private void setWindowTitle() {
         Class<?> xtoolkit = Toolkit.getDefaultToolkit().getClass();
-        if (xtoolkit.getName().equals("sun.awt.X11.XToolkit")) { // $NON-NLS-1$
+        if (xtoolkit.getName().equals("sun.awt.X11.XToolkit")) { // NOSONAR (we don't want to depend on native LAF) $NON-NLS-1$
             try {
                 final Field awtAppClassName = xtoolkit.getDeclaredField("awtAppClassName"); // $NON-NLS-1$
                 awtAppClassName.setAccessible(true);
                 awtAppClassName.set(null, DEFAULT_APP_NAME);
             } catch (NoSuchFieldException | IllegalAccessException nsfe) {
-                log.warn("Error awt title: " + nsfe); // $NON-NLS-1$
+                if (log.isWarnEnabled()) {
+                    log.warn("Error awt title: {}", nsfe.toString()); // $NON-NLS-1$
+                }
             }
        }
     }

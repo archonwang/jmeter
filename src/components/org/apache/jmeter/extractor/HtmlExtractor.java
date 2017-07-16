@@ -31,34 +31,23 @@ import org.apache.jmeter.testelement.property.IntegerProperty;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 
  */
 public class HtmlExtractor extends AbstractScopedTestElement implements PostProcessor, Serializable {
 
+    private static final long serialVersionUID = 1L;
+
     public static final String EXTRACTOR_JSOUP = "JSOUP"; //$NON-NLS-1$
 
     public static final String EXTRACTOR_JODD = "JODD"; //$NON-NLS-1$
 
-    /**
-     * Get the possible extractor implementations
-     * @return Array containing the names of the possible extractors.
-     */
-    public static String[] getImplementations(){
-        return new String[]{EXTRACTOR_JSOUP,EXTRACTOR_JODD};
-    }
-
     public static final String DEFAULT_EXTRACTOR = ""; // $NON-NLS-1$
 
-    /**
-     * 
-     */
-    private static final long serialVersionUID = 3978073849365558131L;
-
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(HtmlExtractor.class);
 
     private static final String EXPRESSION = "HtmlExtractor.expr"; // $NON-NLS-1$
 
@@ -79,6 +68,15 @@ public class HtmlExtractor extends AbstractScopedTestElement implements PostProc
     private static final String DEFAULT_EMPTY_VALUE = "HtmlExtractor.default_empty_value"; // $NON-NLS-1$
 
     private Extractor extractor;
+    
+    /**
+     * Get the possible extractor implementations
+     * @return Array containing the names of the possible extractors.
+     */
+    public static String[] getImplementations(){
+        return new String[]{EXTRACTOR_JSOUP,EXTRACTOR_JODD};
+    }
+
 
     /**
      * Parses the response data using CSS/JQuery expressions and saving the results
@@ -93,8 +91,9 @@ public class HtmlExtractor extends AbstractScopedTestElement implements PostProc
         if (previousResult == null) {
             return;
         }
-        log.debug("HtmlExtractor "+getName()+":processing result");
-
+        if(log.isDebugEnabled()) {
+            log.debug("HtmlExtractor {}: processing result", getName());
+        }
         // Fetch some variables
         JMeterVariables vars = context.getVariables();
         
@@ -117,8 +116,10 @@ public class HtmlExtractor extends AbstractScopedTestElement implements PostProc
                 vars.remove(refName + REF_MATCH_NR);// ensure old value is not left defined
                 try {
                     prevCount = Integer.parseInt(prevString);
-                } catch (NumberFormatException e1) {
-                    log.warn(getName()+":Could not parse "+prevString+" "+e1);
+                } catch (NumberFormatException nfe) {
+                    if (log.isWarnEnabled()) {
+                        log.warn("{}: Could not parse number: '{}'.", getName(), prevString);
+                    }
                 }
             }
             int matchCount=0;// Number of refName_n variable sets to keep
@@ -135,18 +136,20 @@ public class HtmlExtractor extends AbstractScopedTestElement implements PostProc
                 for (int i = 1; i <= matchCount; i++) {
                     match = getCorrectMatch(matches, i);
                     if (match != null) {
-                        final String refName_n = new StringBuilder(refName).append(UNDERSCORE).append(i).toString();
-                        vars.put(refName_n, match);
+                        final String refNameN = new StringBuilder(refName).append(UNDERSCORE).append(i).toString();
+                        vars.put(refNameN, match);
                     }
                 }
             }
             // Remove any left-over variables
             for (int i = matchCount + 1; i <= prevCount; i++) {
-                final String refName_n = new StringBuilder(refName).append(UNDERSCORE).append(i).toString();
-                vars.remove(refName_n);
+                final String refNameN = new StringBuilder(refName).append(UNDERSCORE).append(i).toString();
+                vars.remove(refNameN);
             }
         } catch (RuntimeException e) {
-            log.warn(getName()+":Error while generating result " + e);
+            if (log.isWarnEnabled()) {
+                log.warn("{}: Error while generating result. {}", getName(), e.toString());
+            }
         }
 
     }
@@ -186,7 +189,10 @@ public class HtmlExtractor extends AbstractScopedTestElement implements PostProc
                 getExtractorImpl().extract(expression, attribute, matchNumber, inputString, result, found, "-1");
             } else {
                 if(inputString==null) {
-                    log.warn("No variable '"+getVariableName()+"' found to process by Css/JQuery Extractor '"+getName()+"', skipping processing");
+                    if (log.isWarnEnabled()) {
+                        log.warn("No variable '{}' found to process by CSS/JQuery Extractor '{}', skipping processing",
+                                getVariableName(), getName());
+                    }
                 }
                 return Collections.emptyList();
             } 

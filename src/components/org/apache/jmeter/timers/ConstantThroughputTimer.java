@@ -34,8 +34,8 @@ import org.apache.jmeter.testelement.property.StringProperty;
 import org.apache.jmeter.threads.AbstractThreadGroup;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class implements a constant throughput timer. A Constant Throughtput
@@ -47,13 +47,13 @@ import org.apache.log.Logger;
  * - delay each thread according to when any thread last ran
  */
 public class ConstantThroughputTimer extends AbstractTestElement implements Timer, TestStateListener, TestBean {
-    private static final long serialVersionUID = 3;
+    private static final long serialVersionUID = 4;
 
     private static class ThroughputInfo{
         final Object MUTEX = new Object();
         long lastScheduledTime = 0;
     }
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(ConstantThroughputTimer.class);
 
     private static final double MILLISEC_PER_MIN = 60000.0;
 
@@ -61,11 +61,11 @@ public class ConstantThroughputTimer extends AbstractTestElement implements Time
      * This enum defines the calculation modes used by the ConstantThroughputTimer.
      */
     public enum Mode {
-        ThisThreadOnly("calcMode.1"),
-        AllActiveThreads("calcMode.2"),
-        AllActiveThreadsInCurrentThreadGroup("calcMode.3"),
-        AllActiveThreads_Shared("calcMode.4"),
-        AllActiveThreadsInCurrentThreadGroup_Shared("calcMode.5"),
+        ThisThreadOnly("calcMode.1"), // NOSONAR Keep naming for compatibility
+        AllActiveThreads("calcMode.2"), // NOSONAR Keep naming for compatibility
+        AllActiveThreadsInCurrentThreadGroup("calcMode.3"), // NOSONAR Keep naming for compatibility
+        AllActiveThreads_Shared("calcMode.4"), // NOSONAR Keep naming for compatibility
+        AllActiveThreadsInCurrentThreadGroup_Shared("calcMode.5"), // NOSONAR Keep naming for compatibility
         ;
 
         private final String propertyName; // The property name to be used to look up the display string
@@ -172,9 +172,9 @@ public class ConstantThroughputTimer extends AbstractTestElement implements Time
 
     // Calculate the delay based on the mode
     private long calculateDelay() {
-        long delay = 0;
+        long delay;
         // N.B. we fetch the throughput each time, as it may vary during a test
-        double msPerRequest = (MILLISEC_PER_MIN / getThroughput());
+        double msPerRequest = MILLISEC_PER_MIN / getThroughput();
         switch (mode) {
         case AllActiveThreads: // Total number of threads
             delay = Math.round(JMeterContextService.getNumberOfThreads() * msPerRequest);
@@ -280,14 +280,13 @@ public class ConstantThroughputTimer extends AbstractTestElement implements Time
                         final String propName = e.toString();
                         if (objectValue.equals(rb.getObject(propName))) {
                             final int tmpMode = e.ordinal();
-                            if (log.isDebugEnabled()) {
-                                log.debug("Converted " + pn + "=" + objectValue + " to mode=" + tmpMode  + " using Locale: " + rb.getLocale());
-                            }
+                            log.debug("Converted {}={} to mode={} using Locale: {}", pn, objectValue, tmpMode,
+                                    rb.getLocale());
                             super.setProperty(pn, tmpMode);
                             return;
                         }
                     }
-                    log.warn("Could not convert " + pn + "=" + objectValue + " using Locale: " + rb.getLocale());
+                    log.warn("Could not convert {}={} using Locale: {}", pn, objectValue, rb.getLocale());
                 } catch (IntrospectionException e) {
                     log.error("Could not find BeanInfo", e);
                 }

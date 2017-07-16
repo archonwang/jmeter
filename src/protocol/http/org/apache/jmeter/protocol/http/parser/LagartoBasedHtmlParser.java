@@ -24,6 +24,10 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.Stack;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.jmeter.protocol.http.util.ConversionUtils;
+import org.slf4j.Logger;
+
 import jodd.lagarto.EmptyTagVisitor;
 import jodd.lagarto.LagartoException;
 import jodd.lagarto.LagartoParser;
@@ -33,21 +37,16 @@ import jodd.lagarto.TagType;
 import jodd.lagarto.TagUtil;
 import jodd.lagarto.dom.HtmlCCommentExpressionMatcher;
 import jodd.log.LoggerFactory;
-import jodd.log.impl.Slf4jLoggerFactory;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.jmeter.protocol.http.util.ConversionUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import jodd.log.impl.Slf4jLogger;
 
 /**
  * Parser based on Lagarto
  * @since 2.10
  */
 public class LagartoBasedHtmlParser extends HTMLParser {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = org.slf4j.LoggerFactory.getLogger(LagartoBasedHtmlParser.class);
     static {
-        LoggerFactory.setLoggerFactory(new Slf4jLoggerFactory());
+        LoggerFactory.setLoggerProvider(Slf4jLogger.PROVIDER);
     }
 
     /*
@@ -80,10 +79,12 @@ public class LagartoBasedHtmlParser extends HTMLParser {
 
         private void extractAttribute(Tag tag, String attributeName) {
             CharSequence url = tag.getAttributeValue(attributeName);
-            if (!StringUtils.isEmpty(url)) {
-                urls.addURL(url.toString(), baseUrl.url);
+            String normalizedUrl = normalizeUrlValue(url);
+            if(normalizedUrl != null) {
+                urls.addURL(normalizedUrl, baseUrl.url);
             }
         }
+        
         /*
          * (non-Javadoc)
          * 

@@ -22,10 +22,14 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.FileWriter;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.Charset;
+import java.util.Deque;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
 
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
@@ -34,11 +38,12 @@ import javax.swing.JFileChooser;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.Timer;
 import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 
 import org.apache.jmeter.gui.util.FileDialoger;
-import org.apache.jmeter.gui.util.HeaderAsPropertyRenderer;
+import org.apache.jmeter.gui.util.HeaderAsPropertyRendererWrapper;
 import org.apache.jmeter.samplers.Clearable;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.save.CSVSaveService;
@@ -46,8 +51,8 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.visualizers.gui.AbstractVisualizer;
 import org.apache.jorphan.gui.ObjectTableModel;
+import org.apache.jorphan.gui.ObjectTableSorter;
 import org.apache.jorphan.gui.RendererUtils;
-import org.apache.jorphan.util.JOrphanUtils;
 
 /**
  * Aggregrate Table-Based Reporting Visualizer for JMeter. Props to the people
@@ -58,7 +63,7 @@ import org.apache.jorphan.util.JOrphanUtils;
  */
 public class StatVisualizer extends AbstractVisualizer implements Clearable, ActionListener {
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
     private static final String USE_GROUP_NAME = "useGroupName"; //$NON-NLS-1$
 
@@ -81,6 +86,8 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
     private final JCheckBox useGroupName = new JCheckBox(
             JMeterUtils.getResString("aggregate_graph_use_group_name")); //$NON-NLS-1$
 
+    private final int REFRESH_PERIOD = JMeterUtils.getPropDefault("jmeter.gui.refresh_period", 500); // $NON-NLS-1$
+
     private transient ObjectTableModel model;
 
     /**
@@ -89,6 +96,8 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
     private final transient Object lock = new Object();
 
     private final Map<String, SamplingStatCalculator> tableRows = new ConcurrentHashMap<>();
+
+    private Deque<SamplingStatCalculator> newRows = new ConcurrentLinkedDeque<>();
 
     public StatVisualizer() {
         super();
@@ -114,32 +123,21 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
 
     @Override
     public void add(final SampleResult res) {
-        JMeterUtils.runSafe(false, new Runnable() {
-            @Override
-            public void run() {
-                SamplingStatCalculator row = null;
-                final String sampleLabel = res.getSampleLabel(useGroupName.isSelected());
-                synchronized (lock) {
-                    row = tableRows.get(sampleLabel);
-                    if (row == null) {
-                        row = new SamplingStatCalculator(sampleLabel);
-                        tableRows.put(row.getLabel(), row);
-                        model.insertRow(row, model.getRowCount() - 1);
-                    }
-                }
-                /*
-                 * Synch is needed because multiple threads can update the counts.
-                 */
-                synchronized(row) {
-                    row.addSample(res);
-                }
-                SamplingStatCalculator tot = tableRows.get(TOTAL_ROW_LABEL);
-                synchronized(tot) {
-                    tot.addSample(res);
-                }
-                model.fireTableDataChanged();
-            }
+        SamplingStatCalculator row = tableRows.computeIfAbsent(res.getSampleLabel(useGroupName.isSelected()), label -> {
+           SamplingStatCalculator newRow = new SamplingStatCalculator(label);
+           newRows.add(newRow);
+           return newRow;
         });
+        synchronized(row) {
+            /*
+             * Synch is needed because multiple threads can update the counts.
+             */
+            row.addSample(res);
+        }
+        SamplingStatCalculator tot = tableRows.get(TOTAL_ROW_LABEL);
+        synchronized(lock) {
+            tot.addSample(res);
+        }
     }
 
     /**
@@ -150,6 +148,7 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
         synchronized (lock) {
             model.clearData();
             tableRows.clear();
+            newRows.clear();
             tableRows.put(TOTAL_ROW_LABEL, new SamplingStatCalculator(TOTAL_ROW_LABEL));
             model.addRow(tableRows.get(TOTAL_ROW_LABEL));
         }
@@ -170,13 +169,12 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
 
         mainPanel.add(makeTitlePanel());
 
-        // SortFilterModel mySortedModel =
-        // new SortFilterModel(myStatTableModel);
         myJTable = new JTable(model);
+        myJTable.setRowSorter(new ObjectTableSorter(model).fixLastRow());
         JMeterUtils.applyHiDPI(myJTable);
-        myJTable.getTableHeader().setDefaultRenderer(new HeaderAsPropertyRenderer(StatGraphVisualizer.COLUMNS_MSG_PARAMETERS));
+        HeaderAsPropertyRendererWrapper.setupDefaultRenderer(myJTable, StatGraphVisualizer.getColumnsMsgParameters());
         myJTable.setPreferredScrollableViewportSize(new Dimension(500, 70));
-        RendererUtils.applyRenderers(myJTable, StatGraphVisualizer.RENDERERS);
+        RendererUtils.applyRenderers(myJTable, StatGraphVisualizer.getRenderers());
         myScrollPane = new JScrollPane(myJTable);
         this.add(mainPanel, BorderLayout.NORTH);
         this.add(myScrollPane, BorderLayout.CENTER);
@@ -186,6 +184,15 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
         opts.add(saveTable, BorderLayout.CENTER);
         opts.add(saveHeaders, BorderLayout.EAST);
         this.add(opts,BorderLayout.SOUTH);
+
+        new Timer(REFRESH_PERIOD, e -> {
+            synchronized (lock) {
+                while (!newRows.isEmpty()) {
+                    model.insertRow(newRows.pop(), model.getRowCount() - 1);
+                }
+            }
+            model.fireTableDataChanged();
+        }).start();
     }
 
     @Override
@@ -209,17 +216,14 @@ public class StatVisualizer extends AbstractVisualizer implements Clearable, Act
             if (chooser == null) {
                 return;
             }
-            FileWriter writer = null;
-            try {
-                writer = new FileWriter(chooser.getSelectedFile()); // TODO Charset ?
-                CSVSaveService.saveCSVStats(StatGraphVisualizer.getAllTableData(model, StatGraphVisualizer.FORMATS),writer,
-                        saveHeaders.isSelected() ? StatGraphVisualizer.getLabels(StatGraphVisualizer.COLUMNS) : null);
+            try (FileOutputStream fo = new FileOutputStream(chooser.getSelectedFile());
+                    OutputStreamWriter writer = new OutputStreamWriter(fo, Charset.forName("UTF-8"))){
+                CSVSaveService.saveCSVStats(StatGraphVisualizer.getAllTableData(model, StatGraphVisualizer.getFormatters()),
+                        writer,
+                        saveHeaders.isSelected() ? StatGraphVisualizer.getLabels(StatGraphVisualizer.getColumns()) : null);
             } catch (IOException e) {
                 JMeterUtils.reportErrorToUser(e.getMessage(), "Error saving data");
-            } finally {
-                JOrphanUtils.closeQuietly(writer);
             }
         }
     }
 }
-

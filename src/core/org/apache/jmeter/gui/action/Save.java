@@ -26,7 +26,6 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -55,9 +54,8 @@ import org.apache.jmeter.threads.ThreadGroup;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.collections.HashTree;
 import org.apache.jorphan.collections.ListedHashTree;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Save the current test plan; implements:
@@ -66,7 +64,7 @@ import org.apache.log.Logger;
  * Save (Selection) As
  */
 public class Save extends AbstractAction {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Save.class);
 
     private static final List<File> EMPTY_FILE_LIST = Collections.emptyList();
     
@@ -123,7 +121,7 @@ public class Save extends AbstractAction {
 
     @Override
     public void doAction(ActionEvent e) throws IllegalUserActionException {
-        HashTree subTree = null;
+        HashTree subTree;
         boolean fullSave = false; // are we saving the whole tree?
         if (!commands.contains(e.getActionCommand())) {
             throw new IllegalUserActionException("Invalid user command:" + e.getActionCommand());
@@ -210,18 +208,18 @@ public class Save extends AbstractAction {
         try {
             expiredBackupFiles = createBackupFile(fileToBackup);
         } catch (Exception ex) {
-            log.error("Failed to create a backup for " + fileToBackup.getName(), ex); //$NON-NLS-1$
+            log.error("Failed to create a backup for {}", fileToBackup, ex); //$NON-NLS-1$
         }
         
         try {
             convertSubTree(subTree);
         } catch (Exception err) {
-            log.warn("Error converting subtree "+err);
+            if (log.isWarnEnabled()) {
+                log.warn("Error converting subtree. {}", err.toString());
+            }
         }
 
-        FileOutputStream ostream = null;
-        try {
-            ostream = new FileOutputStream(updateFile);
+        try (FileOutputStream ostream = new FileOutputStream(updateFile)){
             SaveService.saveTree(subTree, ostream);
             if (fullSave) { // Only update the stored copy of the tree for a full save
                 subTree = GuiPackage.getInstance().getTreeModel().getTestPlan(); // refetch, because convertSubTree affects it
@@ -238,21 +236,17 @@ public class Save extends AbstractAction {
                 try {
                     FileUtils.deleteQuietly(expiredBackupFile);
                 } catch (Exception ex) {
-                    log.warn("Failed to delete backup file " + expiredBackupFile.getName()); //$NON-NLS-1$
+                    log.warn("Failed to delete backup file, {}", expiredBackupFile); //$NON-NLS-1$
                 }
             }
-        } catch (Throwable ex) {
-            log.error("Error saving tree:", ex);
-            if (ex instanceof Error){
-                throw (Error) ex;
-            }
-            if (ex instanceof RuntimeException){
-                throw (RuntimeException) ex;
-            }
-            throw new IllegalUserActionException("Couldn't save test plan to file: " + updateFile, ex);
-        } finally {
-            JOrphanUtils.closeQuietly(ostream);
+        } catch(RuntimeException ex) {
+            throw ex;
         }
+        catch (Exception ex) {
+            log.error("Error saving tree.", ex);
+            throw new IllegalUserActionException("Couldn't save test plan to file: " + updateFile, ex);
+        } 
+
         GuiPackage.getInstance().updateCurrentGui();
     }
     
@@ -328,12 +322,16 @@ public class Save extends AbstractAction {
         File backupDir = new File(BACKUP_DIRECTORY);
         backupDir.mkdirs();
         if (!backupDir.isDirectory()) {
-            log.error("Could not backup file ! Backup directory does not exist, is not a directory or could not be created ! <" + backupDir.getAbsolutePath() + ">"); //$NON-NLS-1$ //$NON-NLS-2$
+            log.error(
+                    "Could not backup file ! Backup directory does not exist, is not a directory or could not be created ! <{}>", //$NON-NLS-1$
+                    backupDir.getAbsolutePath()); //$NON-NLS-2$
         }
 
-        // select files matching
-        // {baseName}{versionSeparator}{version}{jmxExtension}
-        // where {version} is a 6 digits number
+        /**
+         *  select files matching
+         * {baseName}{versionSeparator}{version}{jmxExtension}
+         * where {version} is a 6 digits number
+         */
         String backupPatternRegex = Pattern.quote(baseName + versionSeparator) + "([\\d]{6})" + Pattern.quote(JMX_FILE_EXTENSION); //$NON-NLS-1$
         Pattern backupPattern = Pattern.compile(backupPatternRegex);
         // create a file filter that select files matching a given regex pattern
@@ -363,24 +361,23 @@ public class Save extends AbstractAction {
             expiredFiles.addAll(FileFilterUtils.filterList(expiredFileFilter, backupFiles));
         }
         // sort backups from by their last modified time
-        Collections.sort(backupFiles, new Comparator<File>() {
-            @Override
-            public int compare(File o1, File o2) {
-                long diff = o1.lastModified() - o2.lastModified();
-                // convert the long to an int in order to comply with the method
-                // contract
-                return diff < 0 ? -1 : diff > 0 ? 1 : 0;
-            }
+        Collections.sort(backupFiles, (o1, o2) -> {
+            long diff = o1.lastModified() - o2.lastModified();
+            // convert the long to an int in order to comply with the method
+            // contract
+            return diff < 0 ? -1 : diff > 0 ? 1 : 0;
         });
-        // backup name is of the form
-        // {baseName}{versionSeparator}{version}{jmxExtension}
-        String backupName = baseName + versionSeparator + BACKUP_VERSION_FORMATER.format(lastVersionNumber + 1) + JMX_FILE_EXTENSION;
+        /**
+         *  backup name is of the form 
+         * {baseName}{versionSeparator}{version}{jmxExtension}
+         */
+        String backupName = baseName + versionSeparator + BACKUP_VERSION_FORMATER.format(lastVersionNumber + 1L) + JMX_FILE_EXTENSION;
         File backupFile = new File(backupDir, backupName);
         // create file backup
         try {
             FileUtils.copyFile(fileToBackup, backupFile);
         } catch (IOException e) {
-            log.error("Failed to backup file :" + fileToBackup.getAbsolutePath(), e); //$NON-NLS-1$
+            log.error("Failed to backup file : {}", fileToBackup.getAbsolutePath(), e); //$NON-NLS-1$
             return EMPTY_FILE_LIST;
         }
         // add the fresh new backup file (list is still sorted here)

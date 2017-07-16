@@ -252,7 +252,7 @@ public class ArgumentsPanel extends AbstractConfigGui implements ActionListener 
         super.configure(el);
         if (el instanceof Arguments) {
             tableModel.clearData();
-            for (JMeterProperty jMeterProperty : ((Arguments) el)) {
+            for (JMeterProperty jMeterProperty : (Arguments) el) {
                 Argument arg = (Argument) jMeterProperty.getObjectValue();
                 tableModel.addRow(arg);
             }
@@ -294,17 +294,7 @@ public class ArgumentsPanel extends AbstractConfigGui implements ActionListener 
      */
     protected JButton getAddButton() {
         return add;
-    }
-
-    /**
-     * Enable or disable the delete button depending on whether or not there is
-     * a row to be deleted.
-     */
-    @Deprecated
-    protected void checkDeleteStatus() {
-       checkButtonsStatus();
-    }
-    
+    }    
     
     protected void checkButtonsStatus() {
         // Disable DELETE if there are no rows in the table to delete.

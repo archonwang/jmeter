@@ -39,38 +39,39 @@ public abstract class AbstractSamplerCreator implements SamplerCreator {
     protected static final String HTTP = "http"; // $NON-NLS-1$
     protected static final String HTTPS = "https"; // $NON-NLS-1$
 
-    /** Filetype to be used for the temporary binary files*/
-    private static final String binaryFileSuffix =
+    /** FileType to be used for the temporary binary files*/
+    private static final String BINARY_FILE_SUFFIX =
         JMeterUtils.getPropDefault("proxy.binary.filesuffix",// $NON-NLS-1$
                                    ".binary"); // $NON-NLS-1$
 
     /** Which content-types will be treated as binary (exact match) */
-    private static final Set<String> binaryContentTypes = new HashSet<>();
+    private static final Set<String> BINARY_CONTENT_TYPES = new HashSet<>();
 
     /** Where to store the temporary binary files */
-    private static final String binaryDirectory =
+    private static final String BINARY_DIRECTORY =
         JMeterUtils.getPropDefault("proxy.binary.directory",// $NON-NLS-1$
-                System.getProperty("user.dir")); // $NON-NLS-1$ proxy.binary.filetype=binary
+                System.getProperty("user.dir")); // $NON-NLS-1$ proxy.binary.fileType=binary
 
+    /*
+     * Optionally number the requests
+     */
+    private static final boolean NUMBER_REQUESTS =
+        JMeterUtils.getPropDefault("proxy.number.requests", true); // $NON-NLS-1$
+
+    private static AtomicInteger REQUEST_NUMBER = new AtomicInteger(0);// running number
+    
+    
     static {
         String binaries = JMeterUtils.getPropDefault("proxy.binary.types", // $NON-NLS-1$
                 "application/x-amf,application/x-java-serialized-object"); // $NON-NLS-1$
         if (binaries.length() > 0){
             StringTokenizer s = new StringTokenizer(binaries,"|, ");// $NON-NLS-1$
             while (s.hasMoreTokens()){
-               binaryContentTypes.add(s.nextToken());
+                BINARY_CONTENT_TYPES.add(s.nextToken());
             }
         }
     }
-    
-    /*
-     * Optionally number the requests
-     */
-    private static final boolean numberRequests =
-        JMeterUtils.getPropDefault("proxy.number.requests", true); // $NON-NLS-1$
 
-    private static AtomicInteger REQUEST_NUMBER = new AtomicInteger(0);// running number
-    
 
     /**
      * 
@@ -93,14 +94,22 @@ public abstract class AbstractSamplerCreator implements SamplerCreator {
      * Increment request number
      */
     protected static void incrementRequestNumber() {
-        REQUEST_NUMBER.incrementAndGet();
+        incrementRequestNumberAndGet();
+    }
+    
+    /**
+     * Increment request number
+     * @return int number for created sampler
+     */
+    protected static int incrementRequestNumberAndGet() {
+        return REQUEST_NUMBER.incrementAndGet();
     }
 
     /**
      * @return boolean is numbering requests is required
      */
     protected static boolean isNumberRequests() {
-        return numberRequests;
+        return NUMBER_REQUESTS;
     }
 
     /**
@@ -111,21 +120,21 @@ public abstract class AbstractSamplerCreator implements SamplerCreator {
         if (contentType == null) {
             return false;
         }
-        return binaryContentTypes.contains(contentType);
+        return BINARY_CONTENT_TYPES.contains(contentType);
     }
     
     /**
      * @return String binary file suffix
      */
     protected String getBinaryFileSuffix() {
-        return binaryFileSuffix;
+        return BINARY_FILE_SUFFIX;
     }
 
     /**
      * @return String binary directory
      */
     protected String getBinaryDirectory() {
-        return binaryDirectory;
+        return BINARY_DIRECTORY;
     }
 
     /**

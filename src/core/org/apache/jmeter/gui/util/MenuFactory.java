@@ -43,6 +43,7 @@ import javax.swing.MenuElement;
 import org.apache.jmeter.control.Controller;
 import org.apache.jmeter.gui.GuiPackage;
 import org.apache.jmeter.gui.JMeterGUIComponent;
+import org.apache.jmeter.gui.UndoHistory;
 import org.apache.jmeter.gui.action.ActionNames;
 import org.apache.jmeter.gui.action.ActionRouter;
 import org.apache.jmeter.gui.action.KeyStrokes;
@@ -56,13 +57,13 @@ import org.apache.jmeter.testelement.WorkBench;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.visualizers.Printable;
 import org.apache.jorphan.gui.GuiUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.reflect.ClassFinder;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class MenuFactory {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(MenuFactory.class);
 
     /*
      *  Predefined strings for makeMenu().
@@ -123,9 +124,17 @@ public final class MenuFactory {
     private static final String[] MENU_PARENT_SAMPLER = new String[] {
         MenuFactory.CONTROLLERS };
 
-    private static final List<MenuInfo> timers, controllers, samplers, threads, 
-        fragments,configElements, assertions, listeners, nonTestElements,
-        postProcessors, preProcessors;
+    private static final List<MenuInfo> timers;
+    private static final List<MenuInfo> controllers;
+    private static final List<MenuInfo> samplers;
+    private static final List<MenuInfo> threads;
+    private static final List<MenuInfo> fragments;
+    private static final List<MenuInfo> configElements;
+    private static final List<MenuInfo> assertions;
+    private static final List<MenuInfo> listeners;
+    private static final List<MenuInfo> nonTestElements;
+    private static final List<MenuInfo> postProcessors;
+    private static final List<MenuInfo> preProcessors;
 
     static {
         threads = new LinkedList<>();
@@ -159,14 +168,11 @@ public final class MenuFactory {
 
             initializeMenus();
             sortPluginMenus();
-        } catch (Throwable e) {
-            log.error("", e);
-            if (e instanceof Error){
-                throw (Error) e;
-            }
-            if (e instanceof RuntimeException){
-                throw (RuntimeException) e;
-            }
+        } catch (Error | RuntimeException ex) { // NOSONAR We want to log Errors in jmeter.log 
+            log.error("Error initializing menus in static bloc, check configuration if using 3rd party libraries", ex);
+            throw ex;
+        } catch (Exception ex) {
+            log.error("Error initializing menus in static bloc, check configuration if using 3rd party libraries", ex);
         }
     }
 
@@ -184,7 +190,6 @@ public final class MenuFactory {
         menu.add(makeMenuItemRes("copy", ActionNames.COPY, KeyStrokes.COPY));  //$NON-NLS-1$
         menu.add(makeMenuItemRes("paste", ActionNames.PASTE, KeyStrokes.PASTE)); //$NON-NLS-1$
         menu.add(makeMenuItemRes("duplicate", ActionNames.DUPLICATE, KeyStrokes.DUPLICATE));  //$NON-NLS-1$
-        menu.add(makeMenuItemRes("reset_gui", ActionNames.RESET_GUI )); //$NON-NLS-1$
         if (removable) {
             menu.add(makeMenuItemRes("remove", ActionNames.REMOVE, KeyStrokes.REMOVE)); //$NON-NLS-1$
         }
@@ -193,7 +198,6 @@ public final class MenuFactory {
     public static void addPasteResetMenu(JPopupMenu menu) {
         addSeparator(menu);
         menu.add(makeMenuItemRes("paste", ActionNames.PASTE, KeyStrokes.PASTE)); //$NON-NLS-1$
-        menu.add(makeMenuItemRes("reset_gui", ActionNames.RESET_GUI )); //$NON-NLS-1$
     }
 
     public static void addFileMenu(JPopupMenu pop) {
@@ -207,7 +211,9 @@ public final class MenuFactory {
     public static void addFileMenu(JPopupMenu menu, boolean addSaveTestFragmentMenu) {
         // the undo/redo as a standard goes first in Edit menus
         // maybe there's better place for them in JMeter?
-        addUndoItems(menu);
+        if(UndoHistory.isEnabled()) {
+            addUndoItems(menu);
+        }
 
         addSeparator(menu);
         menu.add(makeMenuItemRes("open", ActionNames.OPEN));// $NON-NLS-1$
@@ -282,12 +288,19 @@ public final class MenuFactory {
         pop.add(MenuFactory.makeMenus(MENU_ADD_CONTROLLER,
                 JMeterUtils.getResString("add"),// $NON-NLS-1$
                 ActionNames.ADD));
-        pop.add(makeMenus(MENU_PARENT_CONTROLLER,
-                JMeterUtils.getResString("insert_parent"),// $NON-NLS-1$
-                ActionNames.ADD_PARENT));
+        pop.add(MenuFactory.makeMenuItemRes("add_think_times",// $NON-NLS-1$
+                ActionNames.ADD_THINK_TIME_BETWEEN_EACH_STEP));
+
+        pop.add(MenuFactory.makeMenuItemRes("apply_naming",// $NON-NLS-1$
+                ActionNames.APPLY_NAMING_CONVENTION));
+        
         pop.add(makeMenus(MENU_PARENT_CONTROLLER,
                 JMeterUtils.getResString("change_parent"),// $NON-NLS-1$
                 ActionNames.CHANGE_PARENT));
+
+        pop.add(makeMenus(MENU_PARENT_CONTROLLER,
+                JMeterUtils.getResString("insert_parent"),// $NON-NLS-1$
+                ActionNames.ADD_PARENT));
         MenuFactory.addEditMenu(pop, true);
         MenuFactory.addFileMenu(pop);
         return pop;
@@ -475,13 +488,13 @@ public final class MenuFactory {
                 }
 
                 if (elementsToSkip.contains(name)) { // No point instantiating class
-                    log.info("Skipping " + name);
+                    log.info("Skipping {}", name);
                     continue;
                 }
 
                 boolean hideBean = false; // Should the TestBean be hidden?
 
-                JMeterGUIComponent item;
+                JMeterGUIComponent item = null;
                 try {
                     Class<?> c = Class.forName(name);
                     if (TestBean.class.isAssignableFrom(c)) {
@@ -492,29 +505,28 @@ public final class MenuFactory {
                         item = (JMeterGUIComponent) c.newInstance();
                     }
                 } catch (NoClassDefFoundError e) {
-                    log.warn("Missing jar? Could not create " + name + ". " + e);
+                    log.warn(
+                            "Configuration error, probably corrupt or missing third party library(jar) ? Could not create class: {}. {}",
+                            name, e, e);
                     continue;
-                } catch (Throwable e) {
-                    log.warn("Could not instantiate " + name, e);
-                    if (e instanceof Error){
-                        throw (Error) e;
-                    }
-                    if (e instanceof RuntimeException){
-                        if (!(e instanceof HeadlessException)) { // Allow headless testing
-                            throw (RuntimeException) e;
-                        }
-                    }
+                } catch(HeadlessException e) {
+                    log.warn("Could not instantiate class: {}", name, e); // NOSONAR
+                    continue;
+                } catch(RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    log.warn("Could not instantiate class: {}", name, e); // NOSONAR
                     continue;
                 }
                 if (hideBean || elementsToSkip.contains(item.getStaticLabel())) {
-                    log.info("Skipping " + name);
+                    log.info("Skipping {}", name);
                     continue;
                 } else {
                     elementsToSkip.add(name); // Don't add it again
                 }
                 Collection<String> categories = item.getMenuCategories();
                 if (categories == null) {
-                    log.debug(name + " participates in no menus.");
+                    log.debug("{} participates in no menus.", name);
                     continue;
                 }
                 if (categories.contains(THREADS)) {
@@ -560,7 +572,7 @@ public final class MenuFactory {
 
             }
         } catch (IOException e) {
-            log.error("", e);
+            log.error("IO Exception while initializing menus.", e);
         }
     }
 

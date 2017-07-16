@@ -32,9 +32,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
+import org.slf4j.LoggerFactory;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
 import org.apache.oro.text.regex.MatchResult;
 import org.apache.oro.text.regex.Pattern;
 import org.apache.oro.text.regex.PatternMatcherInput;
@@ -57,7 +57,7 @@ import org.apache.oro.text.regex.Perl5Matcher;
  * v - verbose, i.e. print some details to stdout
  */
 public class HttpMirrorThread implements Runnable {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(HttpMirrorThread.class);
 
     private static final Charset ISO_8859_1 = StandardCharsets.ISO_8859_1;
 
@@ -110,6 +110,10 @@ public class HttpMirrorThread implements Runnable {
 
             baos.close();
             final String headerString = headers.toString();
+            if(headerString.length() == 0 || headerString.indexOf('\r') < 0) {
+                log.error("Invalid request received:'{}'", headerString);
+                return;
+            }
             final String firstLine = headerString.substring(0, headerString.indexOf('\r'));
             final String[] requestParts = firstLine.split("\\s+");
             final String requestMethod = requestParts[0];
@@ -257,7 +261,7 @@ public class HttpMirrorThread implements Runnable {
                 // It is chunked transfer encoding, which we do not really support yet.
                 // So we just read without blocking, because we do not know when to
                 // stop reading, so we cannot block
-                // TODO propery implement support for chunked transfer, i.e. to
+                // TODO properly implement support for chunked transfer, i.e. to
                 // know when we have read the whole request, and therefore allow
                 // the reading to block
                 log.debug("Chunked");
@@ -266,7 +270,7 @@ public class HttpMirrorThread implements Runnable {
                 }
             }
             else {
-                // The reqest has no body, or it has a transfer encoding we do not support.
+                // The request has no body, or it has a transfer encoding we do not support.
                 // In either case, we read any data available
                 log.debug("Other");
                 while(in.available() > 0 && ((length = in.read(buffer)) != -1)) {

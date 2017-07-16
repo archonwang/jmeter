@@ -52,7 +52,7 @@ public class ClientPool {
 
     /**
      * Clear all the clients created by either Publish or Subscribe sampler. We
-     * need to do this to make sure all the threads creatd during the test are
+     * need to do this to make sure all the threads created during the test are
      * destroyed and cleaned up. In some cases, the client provided by the
      * manufacturer of the JMS server may have bugs and some threads may become
      * zombie. In those cases, it is not the responsibility of JMeter for those
@@ -79,5 +79,13 @@ public class ClientPool {
     // TODO Method with 0 reference, really useful ?
     public static Object get(Object key) {
         return client_map.get(key);
+    }
+
+    /**
+     * Remove publisher from clients
+     * @param publisher {@link Publisher}
+     */
+    public static synchronized void removeClient(Publisher publisher) {
+        clients.remove(publisher);
     }
 }

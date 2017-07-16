@@ -70,7 +70,8 @@ public class ModuleController extends GenericController implements ReplaceableCo
         if (selectedNode == null) {
             this.restoreSelected();
         }
-        clone.selectedNode = selectedNode; // TODO ?? (JMeterTreeNode) selectedNode.clone();
+        // TODO Should we clone instead the selectedNode?
+        clone.selectedNode = selectedNode; 
         return clone;
     }
 
@@ -134,7 +135,7 @@ public class ModuleController extends GenericController implements ReplaceableCo
     public void resolveReplacementSubTree(JMeterTreeNode context) {
         if (selectedNode == null) {
             List<?> nodePathList = getNodePath();
-            if (nodePathList != null && nodePathList.size() > 0) {
+            if (nodePathList != null && !nodePathList.isEmpty()) {
                 traverse(context, nodePathList, 1);
             }
 
@@ -143,11 +144,11 @@ public class ModuleController extends GenericController implements ReplaceableCo
             }
         }
     }
-    
+
     /**
      * In GUI Mode replacement occurs when test start
      * In Non GUI Mode replacement occurs before test runs
-     * @return true if replacement occured at the time method is called
+     * @return true if replacement occurred at the time method is called
      */
     private boolean hasReplacementOccured() {
         if(GuiPackage.getInstance() != null) {

@@ -113,7 +113,7 @@ public class JMeterTreeModel extends DefaultTreeModel {
                 addSubTree(subTree.getTree(item), current);
             } else if (item instanceof WorkBench) {
                 current = (JMeterTreeNode) ((JMeterTreeNode) getRoot()).getChildAt(1);
-                final TestElement testElement = ((TestElement) current.getUserObject());
+                final TestElement testElement = (TestElement) current.getUserObject();
                 testElement.addTestElement(item);
                 testElement.setName(item.getName());
                 addSubTree(subTree.getTree(item), current);
@@ -143,6 +143,7 @@ public class JMeterTreeModel extends DefaultTreeModel {
             // The node can be added in non GUI mode at startup
             guiPackage.updateCurrentNode();
             JMeterGUIComponent guicomp = guiPackage.getGui(component);
+            guicomp.clearGui();
             guicomp.configure(component);
             guicomp.modifyTestElement(component);
             guiPackage.getCurrentGui(); // put the gui object back

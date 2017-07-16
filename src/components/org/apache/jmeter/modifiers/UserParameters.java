@@ -26,18 +26,17 @@ import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.processor.PreProcessor;
 import org.apache.jmeter.testelement.AbstractTestElement;
-import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.property.BooleanProperty;
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.threads.JMeterVariables;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class UserParameters extends AbstractTestElement implements Serializable, PreProcessor, LoopIterationListener {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(UserParameters.class);
 
-    private static final long serialVersionUID = 233L;
+    private static final long serialVersionUID = 234L;
 
     public static final String NAMES = "UserParameters.names";// $NON-NLS-1$
 
@@ -45,13 +44,13 @@ public class UserParameters extends AbstractTestElement implements Serializable,
 
     public static final String PER_ITERATION = "UserParameters.per_iteration";// $NON-NLS-1$
 
-    /*
+    /**
      * Although the lock appears to be an instance lock, in fact the lock is
-     * shared between all threads in a thread group, but different thread groups
-     * have different locks - see the clone() method below
+     * shared between all threads see the clone() method below
      *
      * The lock ensures that all the variables are processed together, which is
      * important for functions such as __CSVRead and _StringFromFile.
+     * But it has a performance drawback.
      */
     private transient Object lock = new Object();
 
@@ -137,7 +136,7 @@ public class UserParameters extends AbstractTestElement implements Serializable,
     @Override
     public void process() {
         if (log.isDebugEnabled()) {
-            log.debug(Thread.currentThread().getName() + " process " + isPerIteration());//$NON-NLS-1$
+            log.debug("{} process {}", Thread.currentThread().getName(), isPerIteration());//$NON-NLS-1$
         }
         if (!isPerIteration()) {
             setValues();
@@ -148,7 +147,7 @@ public class UserParameters extends AbstractTestElement implements Serializable,
     private void setValues() {
         synchronized (lock) {
             if (log.isDebugEnabled()) {
-                log.debug(Thread.currentThread().getName() + " Running up named: " + getName());//$NON-NLS-1$
+                log.debug("{} Running up named: {}", Thread.currentThread().getName(), getName());//$NON-NLS-1$
             }
             PropertyIterator namesIter = getNames().iterator();
             PropertyIterator valueIter = getValues().iterator();
@@ -157,7 +156,7 @@ public class UserParameters extends AbstractTestElement implements Serializable,
                 String name = namesIter.next().getStringValue();
                 String value = valueIter.next().getStringValue();
                 if (log.isDebugEnabled()) {
-                    log.debug(Thread.currentThread().getName() + " saving variable: " + name + "=" + value);//$NON-NLS-1$
+                    log.debug("{} saving variable: {}={}", Thread.currentThread().getName(), name, value);//$NON-NLS-1$
                 }
                 jmvars.put(name, value);
             }
@@ -170,19 +169,17 @@ public class UserParameters extends AbstractTestElement implements Serializable,
     @Override
     public void iterationStart(LoopIterationEvent event) {
         if (log.isDebugEnabled()) {
-            log.debug(Thread.currentThread().getName() + " iteration start " + isPerIteration());//$NON-NLS-1$
+            log.debug("{} iteration start {}", Thread.currentThread().getName(), isPerIteration());//$NON-NLS-1$
         }
         if (isPerIteration()) {
             setValues();
         }
     }
 
-    /*
-     * (non-Javadoc) A new instance is created for each thread group, and the
+    /**
+     * A new instance is created for each thread group, and the
      * clone() method is then called to create copies for each thread in a
-     * thread group. This means that the lock object is common to a thread
-     * group; separate thread groups have separate locks. If this is not
-     * intended, the lock object could be made static.
+     * thread group. This means that the lock object is common to all instances
      *
      * @see java.lang.Object#clone()
      */
@@ -191,13 +188,5 @@ public class UserParameters extends AbstractTestElement implements Serializable,
         UserParameters up = (UserParameters) super.clone();
         up.lock = lock; // ensure that clones share the same lock object
         return up;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    protected void mergeIn(TestElement element) {
-        // super.mergeIn(element);
     }
 }

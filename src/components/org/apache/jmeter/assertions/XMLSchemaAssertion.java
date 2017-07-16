@@ -27,8 +27,8 @@ import javax.xml.parsers.ParserConfigurationException;
 
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.AbstractTestElement;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
@@ -38,12 +38,10 @@ import org.xml.sax.SAXParseException;
 
 /**
  * XMLSchemaAssertion.java Validate response against an XML Schema author
- * <a href="mailto:d.maung@mdl.com">Dave Maung</a>
- * 
  */
 public class XMLSchemaAssertion extends AbstractTestElement implements Serializable, Assertion {
 
-    private static final long serialVersionUID = 233L;
+    private static final long serialVersionUID = 234L;
 
     public static final String FILE_NAME_IS_REQUIRED = "FileName is required";
 
@@ -53,7 +51,7 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
 
     public static final String JAXP_SCHEMA_SOURCE = "http://java.sun.com/xml/jaxp/properties/schemaSource";
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(XMLSchemaAssertion.class);
 
     public static final String XSD_FILENAME_KEY = "xmlschema_assertion_filename";
 
@@ -72,10 +70,7 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
         }
 
         String xsdFileName = getXsdFileName();
-        if (log.isDebugEnabled()) {
-            log.debug("xmlString: " + resultData);
-            log.debug("xsdFileName: " + xsdFileName);
-        }
+        log.debug("xmlString: {}, xsdFileName: {}", resultData, xsdFileName);
         if (xsdFileName == null || xsdFileName.length() == 0) {
             result.setResultForFailure(FILE_NAME_IS_REQUIRED);
         } else {
@@ -101,9 +96,6 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
      */
     private void setSchemaResult(AssertionResult result, String xmlStr, String xsdFileName) {
         try {
-            // boolean toReturn = true;
-
-            // Document doc = null;
             DocumentBuilderFactory parserFactory = DocumentBuilderFactory.newInstance();
             parserFactory.setValidating(true);
             parserFactory.setNamespaceAware(true);
@@ -113,8 +105,6 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
             // create a parser:
             DocumentBuilder parser = parserFactory.newDocumentBuilder();
             parser.setErrorHandler(new SAXErrorHandler(result));
-
-            // doc =
             parser.parse(new InputSource(new StringReader(xmlStr)));
             // if everything went fine then xml schema validation is valid
         } catch (SAXParseException e) {
@@ -126,8 +116,9 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
             }
 
         } catch (SAXException e) {
-
-            log.warn(e.toString());
+            if (log.isWarnEnabled()) {
+                log.warn(e.toString());
+            }
             result.setResultForFailure(e.getMessage());
 
         } catch (IOException e) {
@@ -189,7 +180,6 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
          */
         @Override
         public void fatalError(SAXParseException exception) throws SAXParseException {
-
             String msg = "fatal: " + errorDetails(exception);
             log.debug(msg);
             result.setFailureMessage(msg);
@@ -202,13 +192,9 @@ public class XMLSchemaAssertion extends AbstractTestElement implements Serializa
          */
         @Override
         public void warning(SAXParseException exception) throws SAXParseException {
-
             String msg = "warning: " + errorDetails(exception);
             log.debug(msg);
             result.setFailureMessage(msg);
-            // result.setError(true); // TODO is this the correct strategy?
-            // throw exception; // allow assertion to pass
-
         }
     }
 }

@@ -22,17 +22,16 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.Writer;
 
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Utility class to handle text files as a single lump of text.
@@ -40,12 +39,11 @@ import org.apache.log.Logger;
  * Note this is just as memory-inefficient as handling a text file can be. Use
  * with restraint.
  *
- * @version $Revision$
  */
 public class TextFile extends File {
     private static final long serialVersionUID = 240L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(TextFile.class);
 
     /**
      * File encoding. null means use the platform's default.
@@ -111,11 +109,13 @@ public class TextFile extends File {
      */
     public void setText(String body) {
         Writer writer = null;
+        OutputStream outputStream = null;
         try {
+            outputStream = new FileOutputStream(this);
             if (encoding == null) {
-                writer = new FileWriter(this);
+                writer = new OutputStreamWriter(outputStream);
             } else {
-                writer = new OutputStreamWriter(new FileOutputStream(this), encoding);
+                writer = new OutputStreamWriter(outputStream, encoding);
             }
             writer.write(body);
             writer.flush();
@@ -123,6 +123,7 @@ public class TextFile extends File {
             log.error("", ioe);
         } finally {
             JOrphanUtils.closeQuietly(writer);
+            JOrphanUtils.closeQuietly(outputStream);
         }
     }
 
@@ -136,11 +137,13 @@ public class TextFile extends File {
         StringBuilder sb = new StringBuilder();
         Reader reader = null;
         BufferedReader br = null;
+        FileInputStream fileInputStream = null;
         try {
+            fileInputStream = new FileInputStream(this);
             if (encoding == null) {
-                reader = new FileReader(this);
+                reader = new InputStreamReader(fileInputStream);                
             } else {
-                reader = new InputStreamReader(new FileInputStream(this), encoding);
+                reader = new InputStreamReader(fileInputStream, encoding);
             }
             br = new BufferedReader(reader);
             String line = "NOTNULL"; //$NON-NLS-1$
@@ -153,7 +156,9 @@ public class TextFile extends File {
         } catch (IOException ioe) {
             log.error("", ioe); //$NON-NLS-1$
         } finally {
-            JOrphanUtils.closeQuietly(br); // closes reader as well
+            JOrphanUtils.closeQuietly(br);
+            JOrphanUtils.closeQuietly(reader); 
+            JOrphanUtils.closeQuietly(fileInputStream); 
         }
 
         return sb.toString();

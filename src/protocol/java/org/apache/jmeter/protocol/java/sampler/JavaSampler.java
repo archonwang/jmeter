@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.config.ConfigTestElement;
+import org.apache.jmeter.protocol.java.test.JavaTest;
 import org.apache.jmeter.samplers.AbstractSampler;
 import org.apache.jmeter.samplers.Entry;
 import org.apache.jmeter.samplers.Interruptible;
@@ -34,8 +35,8 @@ import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.testelement.property.TestElementProperty;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A sampler for executing custom Java code in each sample. See
@@ -45,9 +46,9 @@ import org.apache.log.Logger;
  */
 public class JavaSampler extends AbstractSampler implements TestStateListener, Interruptible {
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(JavaTest.class);
 
-    private static final long serialVersionUID = 232L; // Remember to change this when the class changes ...
+    private static final long serialVersionUID = 233L; // Remember to change this when the class changes ...
 
     private static final Set<String> APPLIABLE_CONFIG_CLASSES = new HashSet<>(
             Arrays.asList(
@@ -120,7 +121,7 @@ public class JavaSampler extends AbstractSampler implements TestStateListener, I
         String name = getClassname().trim();
         try {
             javaClass = Class.forName(name, false, Thread.currentThread().getContextClassLoader());
-            Method method = javaClass.getMethod("teardownTest", new Class[]{JavaSamplerContext.class});
+            Method method = javaClass.getMethod("teardownTest", JavaSamplerContext.class);
             isToBeRegistered = !method.getDeclaringClass().equals(AbstractJavaSamplerClient.class);
             log.info("Created class: " + name + ". Uses tearDownTest: " + isToBeRegistered);
         } catch (Exception e) {
@@ -238,7 +239,7 @@ public class JavaSampler extends AbstractSampler implements TestStateListener, I
     /**
      * Retrieves reference to JavaSamplerClient.
      *
-     * Convience method used to check for null reference without actually
+     * Convenience method used to check for null reference without actually
      * creating a JavaSamplerClient
      *
      * @return reference to JavaSamplerClient NOTUSED private JavaSamplerClient
@@ -321,7 +322,7 @@ public class JavaSampler extends AbstractSampler implements TestStateListener, I
             Thread.yield();
             SampleResult results = new SampleResult();
             results.setSuccessful(false);
-            results.setResponseData(("Class not found: " + getClassname()), null);
+            results.setResponseData("Class not found: " + getClassname(), null);
             results.setSampleLabel("ERROR: " + getClassname());
             return results;
         }

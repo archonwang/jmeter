@@ -31,12 +31,13 @@ import java.util.Objects;
 import java.util.Properties;
 
 import org.apache.commons.lang3.CharUtils;
+import org.apache.commons.lang3.time.FastDateFormat;
 import org.apache.jmeter.save.CSVSaveService;
 import org.apache.jmeter.testelement.TestPlan;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JMeterError;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /*
  * N.B. to add a new field, remember the following
@@ -55,8 +56,8 @@ import org.apache.log.Logger;
  * - update listeners.xml to add new property, CSV and XML names etc.
  * - take screenshot sample_result_config.png
  * - update listeners.xml and component_reference.xml with new dimensions (might not change)
- *
  */
+
 /**
  * Holds details of which sample attributes to save.
  *
@@ -70,9 +71,9 @@ import org.apache.log.Logger;
  * </ul>
  */
 public class SampleSaveConfiguration implements Cloneable, Serializable {
-    private static final long serialVersionUID = 7L;
+    private static final long serialVersionUID = 8L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(SampleSaveConfiguration.class);
 
     // ---------------------------------------------------------------------
     // PROPERTY FILE CONSTANTS
@@ -223,53 +224,33 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
     private static final String SAVE_SAMPLE_COUNT    = "jmeter.save.saveservice.sample_count"; // $NON_NLS-1$
 
     private static final String SAVE_IDLE_TIME       = "jmeter.save.saveservice.idle_time"; // $NON_NLS-1$
-    // N.B. Remember to update the equals and hashCode methods when adding new variables.
-
-    // Initialise values from properties
-    private boolean time = _time, latency = _latency, connectTime=_connectTime, timestamp = _timestamp, success = _success, label = _label,
-            code = _code, message = _message, threadName = _threadName, dataType = _dataType, encoding = _encoding,
-            assertions = _assertions, subresults = _subresults, responseData = _responseData,
-            samplerData = _samplerData, xml = _xml, fieldNames = _fieldNames, responseHeaders = _responseHeaders,
-            requestHeaders = _requestHeaders, responseDataOnError = _responseDataOnError;
-
-    private boolean saveAssertionResultsFailureMessage = _saveAssertionResultsFailureMessage;
-
-    private boolean url = _url, bytes = _bytes , sentBytes = _sentBytes, fileName = _fileName;
-
-    private boolean hostname = _hostname;
-
-    private boolean threadCounts = _threadCounts;
-
-    private boolean sampleCount = _sampleCount;
-
-    private boolean idleTime = _idleTime;
-
-    // Does not appear to be used (yet)
-    private int assertionsResultsToSave = _assertionsResultsToSave;
-
-
-    // Don't save this, as it is derived from the time format
-    private boolean printMilliseconds = _printMilliseconds;
-
-    /** A formatter for the time stamp. */
-    private transient DateFormat formatter = _formatter;
-    /* Make transient as we don't want to save the SimpleDataFormat class
-     * Also, there's currently no way to change the value via the GUI, so changing it
-     * later means editting the JMX, or recreating the Listener.
-     */
-
+    
     // Defaults from properties:
-    private static final boolean _time, _timestamp, _success, _label, _code, _message, _threadName, _xml,
-            _responseData, _dataType, _encoding, _assertions, _latency, _connectTime, _subresults, _samplerData, _fieldNames,
-            _responseHeaders, _requestHeaders;
+    private static final boolean TIME;
+    private static final boolean TIMESTAMP;
+    private static final boolean SUCCESS;
+    private static final boolean LABEL;
+    private static final boolean CODE;
+    private static final boolean MESSAGE;
+    private static final boolean THREAD_NAME;
+    private static final boolean IS_XML;
+    private static final boolean RESPONSE_DATA;
+    private static final boolean DATATYPE;
+    private static final boolean ENCODING;
+    private static final boolean ASSERTIONS;
+    private static final boolean LATENCY;
+    private static final boolean CONNECT_TIME;
+    private static final boolean SUB_RESULTS;
+    private static final boolean SAMPLER_DATA;
+    private static final boolean FIELD_NAMES;
+    private static final boolean RESPONSE_HEADERS;
+    private static final boolean REQUEST_HEADERS;
 
-    private static final boolean _responseDataOnError;
+    private static final boolean RESPONSE_DATA_ON_ERROR;
 
-    private static final boolean _saveAssertionResultsFailureMessage;
+    private static final boolean SAVE_ASSERTION_RESULTS_FAILURE_MESSAGE;
 
-    private static final String _timeStampFormat;
-
-    private static final int _assertionsResultsToSave;
+    private static final int ASSERTIONS_RESULT_TO_SAVE;
 
     // TODO turn into method?
     public static final int SAVE_NO_ASSERTIONS = 0;
@@ -278,31 +259,31 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
 
     public static final int SAVE_ALL_ASSERTIONS = SAVE_FIRST_ASSERTION + 1;
 
-    private static final boolean _printMilliseconds;
+    private static final boolean PRINT_MILLISECONDS;
 
-    private static final boolean _bytes;
+    private static final boolean BYTES;
     
-    private static final boolean _sentBytes;
+    private static final boolean SENT_BYTES;
 
-    private static final boolean _url;
+    private static final boolean URL;
 
-    private static final boolean _fileName;
+    private static final boolean FILE_NAME;
 
-    private static final boolean _hostname;
+    private static final boolean HOST_NAME;
 
-    private static final boolean _threadCounts;
+    private static final boolean THREAD_COUNTS;
 
-    private static final boolean _sampleCount;
+    private static final boolean SAMPLE_COUNT;
 
-    private static final DateFormat _formatter;
+    private static final String DATE_FORMAT;
 
     /**
      * The string used to separate fields when stored to disk, for example, the
      * comma for CSV files.
      */
-    private static final String _delimiter;
+    private static final String DELIMITER;
 
-    private static final boolean _idleTime;
+    private static final boolean IDLE_TIME;
 
     public static final String DEFAULT_DELIMITER = ","; // $NON_NLS-1$
 
@@ -312,14 +293,14 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
     static {
         Properties props = JMeterUtils.getJMeterProperties();
 
-        _subresults      = TRUE.equalsIgnoreCase(props.getProperty(SUBRESULTS_PROP, TRUE));
-        _assertions      = TRUE.equalsIgnoreCase(props.getProperty(ASSERTIONS_PROP, TRUE));
-        _latency         = TRUE.equalsIgnoreCase(props.getProperty(LATENCY_PROP, TRUE));
-        _connectTime     = TRUE.equalsIgnoreCase(props.getProperty(CONNECT_TIME_PROP, TRUE));
-        _samplerData     = TRUE.equalsIgnoreCase(props.getProperty(SAMPLERDATA_PROP, FALSE));
-        _responseHeaders = TRUE.equalsIgnoreCase(props.getProperty(RESPONSEHEADERS_PROP, FALSE));
-        _requestHeaders  = TRUE.equalsIgnoreCase(props.getProperty(REQUESTHEADERS_PROP, FALSE));
-        _encoding        = TRUE.equalsIgnoreCase(props.getProperty(ENCODING_PROP, FALSE));
+        SUB_RESULTS      = TRUE.equalsIgnoreCase(props.getProperty(SUBRESULTS_PROP, TRUE));
+        ASSERTIONS      = TRUE.equalsIgnoreCase(props.getProperty(ASSERTIONS_PROP, TRUE));
+        LATENCY         = TRUE.equalsIgnoreCase(props.getProperty(LATENCY_PROP, TRUE));
+        CONNECT_TIME     = TRUE.equalsIgnoreCase(props.getProperty(CONNECT_TIME_PROP, TRUE));
+        SAMPLER_DATA     = TRUE.equalsIgnoreCase(props.getProperty(SAMPLERDATA_PROP, FALSE));
+        RESPONSE_HEADERS = TRUE.equalsIgnoreCase(props.getProperty(RESPONSEHEADERS_PROP, FALSE));
+        REQUEST_HEADERS  = TRUE.equalsIgnoreCase(props.getProperty(REQUESTHEADERS_PROP, FALSE));
+        ENCODING        = TRUE.equalsIgnoreCase(props.getProperty(ENCODING_PROP, FALSE));
 
         String dlm = JMeterUtils.getDelimiter(props.getProperty(DEFAULT_DELIMITER_PROP, DEFAULT_DELIMITER));
         char ch = dlm.charAt(0);
@@ -332,130 +313,89 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
             throw new JMeterError("Delimiter (code "+(int)ch+") must be printable.");
         }
 
-        _delimiter = dlm;
+        DELIMITER = dlm;
 
-        _fieldNames = TRUE.equalsIgnoreCase(props.getProperty(PRINT_FIELD_NAMES_PROP, TRUE));
+        FIELD_NAMES = TRUE.equalsIgnoreCase(props.getProperty(PRINT_FIELD_NAMES_PROP, TRUE));
 
-        _dataType = TRUE.equalsIgnoreCase(props.getProperty(SAVE_DATA_TYPE_PROP, TRUE));
+        DATATYPE = TRUE.equalsIgnoreCase(props.getProperty(SAVE_DATA_TYPE_PROP, TRUE));
 
-        _label = TRUE.equalsIgnoreCase(props.getProperty(SAVE_LABEL_PROP, TRUE));
+        LABEL = TRUE.equalsIgnoreCase(props.getProperty(SAVE_LABEL_PROP, TRUE));
 
-        _code = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_CODE_PROP, TRUE));
+        CODE = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_CODE_PROP, TRUE));
 
-        _responseData = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_DATA_PROP, FALSE));
+        RESPONSE_DATA = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_DATA_PROP, FALSE));
 
-        _responseDataOnError = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_DATA_ON_ERROR_PROP, FALSE));
+        RESPONSE_DATA_ON_ERROR = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_DATA_ON_ERROR_PROP, FALSE));
 
-        _message = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_MESSAGE_PROP, TRUE));
+        MESSAGE = TRUE.equalsIgnoreCase(props.getProperty(SAVE_RESPONSE_MESSAGE_PROP, TRUE));
 
-        _success = TRUE.equalsIgnoreCase(props.getProperty(SAVE_SUCCESSFUL_PROP, TRUE));
+        SUCCESS = TRUE.equalsIgnoreCase(props.getProperty(SAVE_SUCCESSFUL_PROP, TRUE));
 
-        _threadName = TRUE.equalsIgnoreCase(props.getProperty(SAVE_THREAD_NAME_PROP, TRUE));
+        THREAD_NAME = TRUE.equalsIgnoreCase(props.getProperty(SAVE_THREAD_NAME_PROP, TRUE));
 
-        _bytes = TRUE.equalsIgnoreCase(props.getProperty(SAVE_BYTES_PROP, TRUE));
+        BYTES = TRUE.equalsIgnoreCase(props.getProperty(SAVE_BYTES_PROP, TRUE));
         
-        _sentBytes = TRUE.equalsIgnoreCase(props.getProperty(SAVE_SENT_BYTES_PROP, TRUE));
+        SENT_BYTES = TRUE.equalsIgnoreCase(props.getProperty(SAVE_SENT_BYTES_PROP, TRUE));
 
-        _url = TRUE.equalsIgnoreCase(props.getProperty(SAVE_URL_PROP, FALSE));
+        URL = TRUE.equalsIgnoreCase(props.getProperty(SAVE_URL_PROP, FALSE));
 
-        _fileName = TRUE.equalsIgnoreCase(props.getProperty(SAVE_FILENAME_PROP, FALSE));
+        FILE_NAME = TRUE.equalsIgnoreCase(props.getProperty(SAVE_FILENAME_PROP, FALSE));
 
-        _hostname = TRUE.equalsIgnoreCase(props.getProperty(SAVE_HOSTNAME_PROP, FALSE));
+        HOST_NAME = TRUE.equalsIgnoreCase(props.getProperty(SAVE_HOSTNAME_PROP, FALSE));
 
-        _time = TRUE.equalsIgnoreCase(props.getProperty(SAVE_TIME_PROP, TRUE));
+        TIME = TRUE.equalsIgnoreCase(props.getProperty(SAVE_TIME_PROP, TRUE));
 
-        _timeStampFormat = props.getProperty(TIME_STAMP_FORMAT_PROP, MILLISECONDS);
+        String temporaryTimestampFormat = props.getProperty(TIME_STAMP_FORMAT_PROP, MILLISECONDS);
 
-        _printMilliseconds = MILLISECONDS.equalsIgnoreCase(_timeStampFormat);
+        PRINT_MILLISECONDS = MILLISECONDS.equalsIgnoreCase(temporaryTimestampFormat);
 
-        // Prepare for a pretty date
-        // FIXME Can _timeStampFormat be null ? it does not appear to me .
-        if (!_printMilliseconds && !NONE.equalsIgnoreCase(_timeStampFormat) && (_timeStampFormat != null)) {
-            _formatter = new SimpleDateFormat(_timeStampFormat);
+        if (!PRINT_MILLISECONDS && !NONE.equalsIgnoreCase(temporaryTimestampFormat)) {
+            DATE_FORMAT = validateFormat(temporaryTimestampFormat);
         } else {
-            _formatter = null;
+            DATE_FORMAT = null;
         }
 
-        _timestamp = !NONE.equalsIgnoreCase(_timeStampFormat);// reversed compare allows for null
+        TIMESTAMP = !NONE.equalsIgnoreCase(temporaryTimestampFormat);// reversed compare allows for null
 
-        _saveAssertionResultsFailureMessage = TRUE.equalsIgnoreCase(props.getProperty(
+        SAVE_ASSERTION_RESULTS_FAILURE_MESSAGE = TRUE.equalsIgnoreCase(props.getProperty(
                 ASSERTION_RESULTS_FAILURE_MESSAGE_PROP, TRUE));
 
         String whichAssertionResults = props.getProperty(ASSERTION_RESULTS_PROP, NONE);
         if (NONE.equals(whichAssertionResults)) {
-            _assertionsResultsToSave = SAVE_NO_ASSERTIONS;
+            ASSERTIONS_RESULT_TO_SAVE = SAVE_NO_ASSERTIONS;
         } else if (FIRST.equals(whichAssertionResults)) {
-            _assertionsResultsToSave = SAVE_FIRST_ASSERTION;
+            ASSERTIONS_RESULT_TO_SAVE = SAVE_FIRST_ASSERTION;
         } else if (ALL.equals(whichAssertionResults)) {
-            _assertionsResultsToSave = SAVE_ALL_ASSERTIONS;
+            ASSERTIONS_RESULT_TO_SAVE = SAVE_ALL_ASSERTIONS;
         } else {
-            _assertionsResultsToSave = 0;
+            ASSERTIONS_RESULT_TO_SAVE = 0;
         }
 
         String howToSave = props.getProperty(OUTPUT_FORMAT_PROP, CSV);
 
         if (XML.equals(howToSave)) {
-            _xml = true;
+            IS_XML = true;
         } else {
             if (!CSV.equals(howToSave)) {
-                log.warn(OUTPUT_FORMAT_PROP + " has unexepected value: '" + howToSave + "' - assuming 'csv' format");
+                log.warn("{} has unexepected value: '{}' - assuming 'csv' format", OUTPUT_FORMAT_PROP, howToSave);
             }
-            _xml = false;
+            IS_XML = false;
         }
 
-        _threadCounts=TRUE.equalsIgnoreCase(props.getProperty(SAVE_THREAD_COUNTS, TRUE));
+        THREAD_COUNTS=TRUE.equalsIgnoreCase(props.getProperty(SAVE_THREAD_COUNTS, TRUE));
 
-        _sampleCount=TRUE.equalsIgnoreCase(props.getProperty(SAVE_SAMPLE_COUNT, FALSE));
+        SAMPLE_COUNT=TRUE.equalsIgnoreCase(props.getProperty(SAVE_SAMPLE_COUNT, FALSE));
 
-        _idleTime=TRUE.equalsIgnoreCase(props.getProperty(SAVE_IDLE_TIME, TRUE));
+        IDLE_TIME=TRUE.equalsIgnoreCase(props.getProperty(SAVE_IDLE_TIME, TRUE));
     }
 
-    // Don't save this, as not settable via GUI
-    private String delimiter = _delimiter;
-
-    // Don't save this - only needed for processing CSV headers currently
-    private transient int varCount = 0;
-
-    private static final SampleSaveConfiguration _static = new SampleSaveConfiguration();
-
-    public int getVarCount() { // Only for use by CSVSaveService
-        return varCount;
-    }
-
-    public void setVarCount(int varCount) { // Only for use by CSVSaveService
-        this.varCount = varCount;
-    }
-
-    // Give access to initial configuration
-    public static SampleSaveConfiguration staticConfig() {
-        return _static;
-    }
+    private static final SampleSaveConfiguration STATIC_SAVE_CONFIGURATION = new SampleSaveConfiguration();
 
     // for test code only
     static final String CONFIG_GETTER_PREFIX = "save";  // $NON-NLS-1$
-
-    /**
-     * Convert a config name to the method name of the getter.
-     * The getter method returns a boolean.
-     * @param configName the config name
-     * @return the getter method name
-     */
-    public static final String getterName(String configName) {
-        return CONFIG_GETTER_PREFIX + configName;
-    }
-
+    
     // for test code only
     static final String CONFIG_SETTER_PREFIX = "set";  // $NON-NLS-1$
-
-    /**
-     * Convert a config name to the method name of the setter
-     * The setter method requires a boolean parameter.
-     * @param configName the config name
-     * @return the setter method name
-     */
-    public static final String setterName(String configName) {
-        return CONFIG_SETTER_PREFIX + configName;
-    }
 
     /**
      * List of saveXXX/setXXX(boolean) methods which is used to build the Sample Result Save Configuration dialog.
@@ -493,7 +433,67 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
         "Subresults", // XML
         "Assertions", // XML
     }));
+    // N.B. Remember to update the equals and hashCode methods when adding new variables.
+
+    // Initialise values from properties
+    private boolean time = TIME;
+    private boolean latency = LATENCY;
+    private boolean connectTime=CONNECT_TIME;
+    private boolean timestamp = TIMESTAMP;
+    private boolean success = SUCCESS;
+    private boolean label = LABEL;
+    private boolean code = CODE;
+    private boolean message = MESSAGE;
+    private boolean threadName = THREAD_NAME;
+    private boolean dataType = DATATYPE;
+    private boolean encoding = ENCODING;
+    private boolean assertions = ASSERTIONS;
+    private boolean subresults = SUB_RESULTS;
+    private boolean responseData = RESPONSE_DATA;
+    private boolean samplerData = SAMPLER_DATA;
+    private boolean xml = IS_XML;
+    private boolean fieldNames = FIELD_NAMES;
+    private boolean responseHeaders = RESPONSE_HEADERS;
+    private boolean requestHeaders = REQUEST_HEADERS;
+    private boolean responseDataOnError = RESPONSE_DATA_ON_ERROR;
+
+    private boolean saveAssertionResultsFailureMessage = SAVE_ASSERTION_RESULTS_FAILURE_MESSAGE;
+
+    private boolean url = URL;
+    private boolean bytes = BYTES;
+    private boolean sentBytes = SENT_BYTES;
+    private boolean fileName = FILE_NAME;
+
+    private boolean hostname = HOST_NAME;
+
+    private boolean threadCounts = THREAD_COUNTS;
+
+    private boolean sampleCount = SAMPLE_COUNT;
+
+    private boolean idleTime = IDLE_TIME;
+
+    // Does not appear to be used (yet)
+    private int assertionsResultsToSave = ASSERTIONS_RESULT_TO_SAVE;
+
+    // Don't save this, as it is derived from the time format
+    private boolean printMilliseconds = PRINT_MILLISECONDS;
+
+    private transient String dateFormat = DATE_FORMAT;
+
+    /** A formatter for the time stamp. 
+     * Make transient as we don't want to save the FastDateFormat class
+     * Also, there's currently no way to change the value via the GUI, so changing it
+     * later means editing the JMX, or recreating the Listener.
+     */
+    private transient FastDateFormat timestampFormatter =
+        dateFormat != null ? FastDateFormat.getInstance(dateFormat) : null;
     
+    // Don't save this, as not settable via GUI
+    private String delimiter = DELIMITER;
+
+    // Don't save this - only needed for processing CSV headers currently
+    private transient int varCount = 0;
+
     public SampleSaveConfiguration() {
     }
 
@@ -516,7 +516,7 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
         label = value;
         latency = value;
         message = value;
-        printMilliseconds = _printMilliseconds;//is derived from properties only
+        printMilliseconds = PRINT_MILLISECONDS;//is derived from properties only
         requestHeaders = value;
         responseData = value;
         responseDataOnError = value;
@@ -534,18 +534,85 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
         url = value;
         xml = value;
     }
+    
+    public int getVarCount() { // Only for use by CSVSaveService
+        return varCount;
+    }
+
+    public void setVarCount(int varCount) { // Only for use by CSVSaveService
+        this.varCount = varCount;
+    }
+
+    // Give access to initial configuration
+    public static SampleSaveConfiguration staticConfig() {
+        return STATIC_SAVE_CONFIGURATION;
+    }
+    
+    /**
+     * Convert a config name to the method name of the getter.
+     * The getter method returns a boolean.
+     * @param configName the config name
+     * @return the getter method name
+     */
+    public static final String getterName(String configName) {
+        return CONFIG_GETTER_PREFIX + configName;
+    }
+
+    /**
+     * Convert a config name to the method name of the setter
+     * The setter method requires a boolean parameter.
+     * @param configName the config name
+     * @return the setter method name
+     */
+    public static final String setterName(String configName) {
+        return CONFIG_SETTER_PREFIX + configName;
+    }
+
+    /**
+     * Validate pattern
+     * @param temporaryTimestampFormat DateFormat pattern
+     * @return format if ok or null
+     */
+    private static String validateFormat(String temporaryTimestampFormat) {
+        try {
+            new SimpleDateFormat(temporaryTimestampFormat);
+            if(log.isDebugEnabled()) {
+                log.debug("Successfully validated pattern value {} for property {}",
+                        temporaryTimestampFormat, TIME_STAMP_FORMAT_PROP);
+            }
+            return temporaryTimestampFormat;
+        } catch(IllegalArgumentException ex) {
+            log.error("Invalid pattern value {} for property {}", temporaryTimestampFormat, TIME_STAMP_FORMAT_PROP,
+                    ex);
+            return null;
+        }
+    }
+
 
     private Object readResolve(){
-       formatter = _formatter;
-       return this;
+        setupDateFormat(DATE_FORMAT);
+        return this;
+    }
+
+    /**
+     * Initialize threadSafeLenientFormatter
+     * @param pDateFormat String date format
+     */
+    private void setupDateFormat(String pDateFormat) {
+        this.dateFormat = pDateFormat;
+        if(dateFormat != null) {
+            this.timestampFormatter = FastDateFormat.getInstance(dateFormat);
+        } else {
+            this.timestampFormatter = null;
+        }
     }
 
     @Override
     public Object clone() {
         try {
             SampleSaveConfiguration clone = (SampleSaveConfiguration)super.clone();
-            if(this.formatter != null) {
-                clone.formatter = (SimpleDateFormat)this.formatter.clone();
+            if(this.dateFormat != null) {
+                clone.timestampFormatter = (FastDateFormat)this.threadSafeLenientFormatter().clone();
             }
             return clone;
         }
@@ -602,7 +669,7 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
         }
         boolean complexValues = false;
         if(primitiveValues && stringValues) {
-            complexValues = Objects.equals(formatter, s.formatter);
+            complexValues = Objects.equals(dateFormat, s.dateFormat);
         }
 
         return primitiveValues && stringValues && complexValues;
@@ -641,7 +708,7 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
         hash = 31 * hash + (hostname ? 1 : 0);
         hash = 31 * hash + (threadCounts ? 1 : 0);
         hash = 31 * hash + (delimiter != null  ? delimiter.hashCode() : 0);
-        hash = 31 * hash + (formatter != null  ? formatter.hashCode() : 0);
+        hash = 31 * hash + (dateFormat != null  ? dateFormat.hashCode() : 0);
         hash = 31 * hash + (sampleCount ? 1 : 0);
         hash = 31 * hash + (idleTime ? 1 : 0);
 
@@ -871,23 +938,44 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
 
     ///////////////// End of standard field accessors /////////////////////
 
+    
     /**
      * Intended for use by CsvSaveService (and test cases)
      * @param fmt
      *            format of the date to be saved. If <code>null</code>
      *            milliseconds since epoch will be printed
      */
-    public void setFormatter(DateFormat fmt){
-        printMilliseconds = (fmt == null); // maintain relationship
-        formatter = fmt;
+    public void setDateFormat(String fmt){
+        printMilliseconds = fmt == null; // maintain relationship
+        setupDateFormat(fmt);
     }
 
     public boolean printMilliseconds() {
         return printMilliseconds;
     }
 
-    public DateFormat formatter() {
-        return formatter;
+    /**
+     * @return {@link DateFormat} non lenient
+     */
+    public DateFormat strictDateFormatter() {
+        if(dateFormat != null) {
+            return new SimpleDateFormat(dateFormat);
+        } else {
+            return null;
+        }
+    }
+    
+    /**
+     * @return {@link FastDateFormat} Thread safe lenient formatter
+     */
+    public FastDateFormat threadSafeLenientFormatter() {
+        // When restored by XStream threadSafeLenientFormatter may not have 
+        // been initialized
+        if(timestampFormatter == null) {
+            timestampFormatter = 
+                    dateFormat != null ? FastDateFormat.getInstance(dateFormat) : null;
+        }
+        return timestampFormatter;
     }
 
     public int assertionsResultsToSave() {
@@ -909,13 +997,13 @@ public class SampleSaveConfiguration implements Cloneable, Serializable {
 
     // Used by SampleSaveConfigurationConverter.unmarshall()
     public void setDefaultDelimiter() {
-        delimiter=_delimiter;
+        delimiter=DELIMITER;
     }
 
     // Used by SampleSaveConfigurationConverter.unmarshall()
     public void setDefaultTimeStampFormat() {
-        printMilliseconds=_printMilliseconds;
-        formatter=_formatter;
+        printMilliseconds=PRINT_MILLISECONDS;
+        setupDateFormat(DATE_FORMAT);
     }
 
     public boolean saveHostname(){

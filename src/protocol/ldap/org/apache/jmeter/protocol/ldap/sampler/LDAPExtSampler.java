@@ -55,9 +55,9 @@ import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.testelement.property.StringProperty;
 import org.apache.jmeter.testelement.property.TestElementProperty;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.XMLBuffer;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /*******************************************************************************
  * Ldap Sampler class is main class for the LDAP test. This will control all the
@@ -65,7 +65,7 @@ import org.apache.log.Logger;
  ******************************************************************************/
 public class LDAPExtSampler extends AbstractSampler implements TestStateListener {
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(LDAPExtSampler.class);
 
     private static final long serialVersionUID = 240L;
 
@@ -950,31 +950,23 @@ public class LDAPExtSampler extends AbstractSampler implements TestStateListener
     }
 
     private void sortAttributes(final List<Attribute> sortedAttrs) {
-        Collections.sort(sortedAttrs, new Comparator<Attribute>()
-        {
-            @Override
-            public int compare(Attribute o1, Attribute o2)
-            {
-                String nm1 = o1.getID();
-                String nm2 = o2.getID();
+        sortedAttrs.sort((o1, o2) -> {
+            String nm1 = o1.getID();
+            String nm2 = o2.getID();
 
-                return nm1.compareTo(nm2);
-            }
+            return nm1.compareTo(nm2);
         });
     }
 
     private void sortResults(final List<SearchResult> sortedResults) {
-        Collections.sort(sortedResults, new Comparator<SearchResult>()
-        {
-            private int compareToReverse(final String s1, final String s2)
-            {
+        sortedResults.sort(new Comparator<SearchResult>() {
+            private int compareToReverse(final String s1, final String s2) {
                 int len1 = s1.length();
                 int len2 = s2.length();
                 int s1i = len1 - 1;
                 int s2i = len2 - 1;
 
-                for ( ; (s1i >= 0) && (s2i >= 0); s1i--, s2i--)
-                {
+                for (; (s1i >= 0) && (s2i >= 0); s1i--, s2i--) {
                     char c1 = s1.charAt(s1i);
                     char c2 = s2.charAt(s2i);
 
@@ -986,8 +978,7 @@ public class LDAPExtSampler extends AbstractSampler implements TestStateListener
             }
 
             @Override
-            public int compare(SearchResult o1, SearchResult o2)
-            {
+            public int compare(SearchResult o1, SearchResult o2) {
                 String nm1 = o1.getName();
                 String nm2 = o2.getName();
 
@@ -1027,7 +1018,7 @@ public class LDAPExtSampler extends AbstractSampler implements TestStateListener
     private String getWriteValue(final Object value)
     {
         if (value instanceof String) {
-            // assume it's senstive data
+            // assume it's sensitive data
             return StringEscapeUtils.escapeXml10((String)value);
         }
         if (value instanceof byte[]) {

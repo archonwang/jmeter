@@ -25,8 +25,8 @@ import java.io.StringReader;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.AbstractTestElement;
 import org.apache.jmeter.testelement.ThreadListener;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 import org.xml.sax.XMLReader;
@@ -37,9 +37,9 @@ import org.xml.sax.helpers.XMLReaderFactory;
  * 
  */
 public class XMLAssertion extends AbstractTestElement implements Serializable, Assertion, ThreadListener {
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(XMLAssertion.class);
 
-    private static final long serialVersionUID = 241L;
+    private static final long serialVersionUID = 242L;
 
     // one builder for all requests in a thread
     private static final ThreadLocal<XMLReader> XML_READER = new ThreadLocal<XMLReader>() {
@@ -48,17 +48,17 @@ public class XMLAssertion extends AbstractTestElement implements Serializable, A
             try {
                 return XMLReaderFactory.createXMLReader();
             } catch (SAXException e) {
-                LOG.error("Error initializing XMLReader in XMLAssertion", e); 
+                log.error("Error initializing XMLReader in XMLAssertion", e); 
                 return null;
             }
         }
     };
 
     /**
-     * Returns the result of the Assertion. Here it checks whether the Sample
-     * took to long to be considered successful. If so an AssertionResult
-     * containing a FailureMessage will be returned. Otherwise the returned
-     * AssertionResult will reflect the success of the Sample.
+     * Returns the result of the Assertion. 
+     * Here it checks whether the Sample data is XML. 
+     * If so an AssertionResult containing a FailureMessage will be returned. 
+     * Otherwise the returned AssertionResult will reflect the success of the Sample.
      */
     @Override
     public AssertionResult getResult(SampleResult response) {
@@ -72,9 +72,11 @@ public class XMLAssertion extends AbstractTestElement implements Serializable, A
         XMLReader builder = XML_READER.get();
         if(builder != null) {
             try {
+                builder.setErrorHandler(new LogErrorHandler());
                 builder.parse(new InputSource(new StringReader(resultData)));
             } catch (SAXException | IOException e) {
                 result.setError(true);
+                result.setFailure(true);
                 result.setFailureMessage(e.getMessage());
             }
         } else {

@@ -23,10 +23,14 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
 import java.io.UnsupportedEncodingException;
+
+import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
+import org.hamcrest.CoreMatchers;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -107,6 +111,29 @@ public class TestXPathExtractor {
             assertEquals("two", vars.get(VAL_NAME+"_2"));
             assertNull(vars.get(VAL_NAME+"_3"));
             
+            // Test match 1
+            extractor.setXPathQuery("/book/page");
+            extractor.setMatchNumber(1);
+            extractor.process();
+            assertEquals("one", vars.get(VAL_NAME));
+            assertEquals("1", vars.get(VAL_NAME_NR));
+            assertEquals("one", vars.get(VAL_NAME+"_1"));
+            assertNull(vars.get(VAL_NAME+"_2"));
+            assertNull(vars.get(VAL_NAME+"_3"));
+            
+            // Test match Random
+            extractor.setXPathQuery("/book/page");
+            extractor.setMatchNumber(0);
+            extractor.process();
+            assertEquals("1", vars.get(VAL_NAME_NR));
+            Assert.assertTrue(StringUtils.isNoneEmpty(vars.get(VAL_NAME)));
+            Assert.assertTrue(StringUtils.isNoneEmpty(vars.get(VAL_NAME+"_1")));
+            assertNull(vars.get(VAL_NAME+"_2"));
+            assertNull(vars.get(VAL_NAME+"_3"));
+            
+            // Put back default value
+            extractor.setMatchNumber(-1);
+            
             extractor.setXPathQuery("/book/page[2]");
             extractor.process();
             assertEquals("two", vars.get(VAL_NAME));
@@ -140,6 +167,25 @@ public class TestXPathExtractor {
             extractor.process();
             assertEquals("Default", vars.get(VAL_NAME));
 
+            // No text all matches
+            extractor.setXPathQuery("//a");
+            extractor.process();
+            extractor.setMatchNumber(-1);
+            assertEquals("Default", vars.get(VAL_NAME));
+
+            // No text match second
+            extractor.setXPathQuery("//a");
+            extractor.process();
+            extractor.setMatchNumber(2);
+            assertEquals("Default", vars.get(VAL_NAME));
+
+            // No text match random
+            extractor.setXPathQuery("//a");
+            extractor.process();
+            extractor.setMatchNumber(0);
+            assertEquals("Default", vars.get(VAL_NAME));
+
+            extractor.setMatchNumber(-1);
             // Test fragment
             extractor.setXPathQuery("/book/page[2]");
             extractor.setFragment(true);
@@ -205,21 +251,61 @@ public class TestXPathExtractor {
             assertEquals("zero", vars.get(VAL_NAME+"_1"));
             assertNull(vars.get(VAL_NAME+"_2"));
             
+            
+            // get data from child
+            extractor.setScopeVariable("result");
+            result = new SampleResult();
+            vars.put("result", data);
+            extractor.process();
+            assertEquals("zero", vars.get(VAL_NAME));
+            assertEquals("1", vars.get(VAL_NAME_NR));
+            assertEquals("zero", vars.get(VAL_NAME+"_1"));
+            assertNull(vars.get(VAL_NAME+"_2"));
+            
+            // get data from child
+            extractor.setScopeVariable("result");
+            result = new SampleResult();
+            vars.remove("result");
+            extractor.process();
+            assertEquals("Default", vars.get(VAL_NAME));
+            assertEquals("0", vars.get(VAL_NAME_NR));            
         }
 
         @Test
         public void testInvalidXpath() throws Exception {
             extractor.setXPathQuery("<");
             extractor.process();
+            assertEquals(1, result.getAssertionResults().length);
+            assertEquals(extractor.getName(), result.getAssertionResults()[0].getName());
+            org.junit.Assert.assertTrue(result.getAssertionResults()[0].
+                    getFailureMessage().contains("A location path was expected, but the following token was encountered"));
             assertEquals("Default", vars.get(VAL_NAME));
             assertEquals("0", vars.get(VAL_NAME_NR));
         }
 
         @Test
+        public void testNonXmlDocument() throws Exception {
+            result.setResponseData("Error:exception occurred", null);
+            extractor.setXPathQuery("//test");
+            extractor.process();
+            assertEquals(1, result.getAssertionResults().length);
+            assertEquals(extractor.getName(), result.getAssertionResults()[0].getName());
+            org.junit.Assert.assertTrue(result.getAssertionResults()[0].
+                    getFailureMessage().contains("Content is not allowed in prolog"));
+            assertEquals("Default", vars.get(VAL_NAME));
+            assertEquals("0", vars.get(VAL_NAME_NR));
+        }
+        @Test
         public void testInvalidDocument() throws Exception {
             result.setResponseData("<z>", null);
-            extractor.setXPathQuery("<");
+            extractor.setXPathQuery("//test");
             extractor.process();
+            
+            assertEquals(1, result.getAssertionResults().length);
+            assertEquals(extractor.getName(), result.getAssertionResults()[0].getName());
+            org.junit.Assert.assertThat(result.getAssertionResults()[0].
+                    getFailureMessage(), CoreMatchers.containsString("XML document structures must start and end within the same entity"));
+
             assertEquals("Default", vars.get(VAL_NAME));
             assertEquals("0", vars.get(VAL_NAME_NR));
         }

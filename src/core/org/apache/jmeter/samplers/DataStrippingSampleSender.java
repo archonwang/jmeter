@@ -23,8 +23,8 @@ import java.io.Serializable;
 import java.rmi.RemoteException;
 
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The standard remote sample reporting should be more friendly to the main purpose of
@@ -35,9 +35,12 @@ import org.apache.log.Logger;
  */
 public class DataStrippingSampleSender extends AbstractSampleSender implements Serializable {
 
-    private static final long serialVersionUID = -5556040298982085715L;
+    private static final long serialVersionUID = 1L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    /** empty array which can be returned instead of null */
+    private static final byte[] EMPTY_BA = new byte[0];
+
+    private static final Logger log = LoggerFactory.getLogger(DataStrippingSampleSender.class);
 
     private static final boolean DEFAULT_STRIP_ALSO_ON_ERROR = true;
     
@@ -80,7 +83,7 @@ public class DataStrippingSampleSender extends AbstractSampleSender implements S
 
     @Override
     public void testEnded(String host) {
-        log.info("Test Ended on " + host);
+        log.info("Test Ended on {}", host);
         if(decoratedSender != null) { 
             decoratedSender.testEnded(host);
         }
@@ -103,7 +106,7 @@ public class DataStrippingSampleSender extends AbstractSampleSender implements S
             try {
                 listener.sampleOccurred(event);
             } catch (RemoteException e) {
-                log.error("Error sending sample result over network ",e);
+                log.error("Error sending sample result over network", e);
             }
         }
         else
@@ -118,7 +121,7 @@ public class DataStrippingSampleSender extends AbstractSampleSender implements S
      */
     private void stripResponse(SampleResult result) {
         result.setBytes(result.getBytesAsLong());
-        result.setResponseData(SampleResult.EMPTY_BA);
+        result.setResponseData(EMPTY_BA);
     }
 
     /**
@@ -134,7 +137,7 @@ public class DataStrippingSampleSender extends AbstractSampleSender implements S
         } else {
             stripAlsoOnError = SERVER_CONFIGURED_STRIP_ALSO_ON_ERROR;
         }
-        log.info("Using DataStrippingSampleSender for this run with stripAlsoOnError:"+stripAlsoOnError);
+        log.info("Using DataStrippingSampleSender for this run with stripAlsoOnError: {}", stripAlsoOnError);
         return this;
     }
 }

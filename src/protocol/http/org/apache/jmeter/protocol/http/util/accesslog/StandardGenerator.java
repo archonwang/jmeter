@@ -20,16 +20,15 @@ package org.apache.jmeter.protocol.http.util.accesslog;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.Serializable;
 
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.sampler.HTTPSamplerFactory;
-import org.apache.jorphan.logging.LoggingManager;
+import org.slf4j.LoggerFactory;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
 
 /**
  * Description:<br>
@@ -54,13 +53,11 @@ import org.apache.log.Logger;
 
 public class StandardGenerator implements Generator, Serializable {
 
-    private static final long serialVersionUID = 233L;
+    private static final long serialVersionUID = 234L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(StandardGenerator.class);
 
     protected HTTPSamplerBase SAMPLE = null;
-
-    protected transient FileWriter WRITER = null;
 
     protected transient OutputStream OUTPUT = null;
 
@@ -100,7 +97,7 @@ public class StandardGenerator implements Generator, Serializable {
     }
 
     /**
-     * Create the FileWriter to save the JMX file.
+     * Create the OutputStream to save the JMX file.
      */
     protected void initStream() {
         try {
@@ -116,7 +113,6 @@ public class StandardGenerator implements Generator, Serializable {
     @Override
     public void close() {
         JOrphanUtils.closeQuietly(OUTPUT);
-        JOrphanUtils.closeQuietly(WRITER);
     }
 
     /**

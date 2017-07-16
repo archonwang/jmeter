@@ -52,8 +52,8 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.GuiUtils;
 import org.apache.jorphan.gui.layout.VerticalLayout;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 
 /**
  * Handles input for determining if authentication services are required for a
@@ -61,9 +61,9 @@ import org.apache.log.Logger;
  * user selects.
  */
 public class AuthPanel extends AbstractConfigGui implements ActionListener {
-    private static final long serialVersionUID = -378312656300713636L;
+    private static final long serialVersionUID = -378312656300713635L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(AuthPanel.class);
 
     private static final String ADD_COMMAND = "Add"; //$NON-NLS-1$
 
@@ -293,7 +293,7 @@ public class AuthPanel extends AbstractConfigGui implements ActionListener {
     }
 
     private JPanel createButtonPanel() {
-        boolean tableEmpty = (tableModel.getRowCount() == 0);
+        boolean tableEmpty = tableModel.getRowCount() == 0;
 
         addButton = createButton("add", 'A', ADD_COMMAND, true); //$NON-NLS-1$
         deleteButton = createButton("delete", 'D', DELETE_COMMAND, !tableEmpty); //$NON-NLS-1$
@@ -393,7 +393,7 @@ public class AuthPanel extends AbstractConfigGui implements ActionListener {
         @Override
         public void setValueAt(Object value, int row, int column) {
             Authorization auth = manager.getAuthObjectAt(row);
-            log.debug("Setting auth value: " + value);
+            log.debug("Setting auth value: {}", value);
             switch (column){
                 case AuthManager.COL_URL:
                     auth.setURL((String) value);

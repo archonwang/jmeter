@@ -41,23 +41,21 @@ import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.PropertyIterator;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.reflect.ClassTools;
 import org.apache.jorphan.util.JMeterException;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class provides an interface to the netscape cookies file to pass cookies
  * along with a request.
  *
- * Now uses Commons HttpClient parsing and matching code (since 2.1.2)
- *
  */
 public class CookieManager extends ConfigTestElement implements TestStateListener, TestIterationListener, Serializable {
-    private static final long serialVersionUID = 233L;
+    private static final long serialVersionUID = 234L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(CookieManager.class);
 
     //++ JMX tag values
     private static final String CLEAR = "CookieManager.clearEachIteration";// $NON-NLS-1$
@@ -90,13 +88,9 @@ public class CookieManager extends ConfigTestElement implements TestStateListene
         JMeterUtils.getPropDefault("CookieManager.check.cookies", true);// $NON-NLS-1$
 
     static {
-        log.info("Settings:"
-                + " Delete null: " + DELETE_NULL_COOKIES
-                + " Check: " + CHECK_COOKIES
-                + " Allow variable: " + ALLOW_VARIABLE_COOKIES
-                + " Save: " + SAVE_COOKIES
-                + " Prefix: " + COOKIE_NAME_PREFIX
-                );
+        log.info("Settings: Delete null: {} Check: {} Allow variable: {} Save: {} Prefix: {}", 
+                DELETE_NULL_COOKIES, CHECK_COOKIES, ALLOW_VARIABLE_COOKIES, 
+                SAVE_COOKIES, COOKIE_NAME_PREFIX);
     }
     private transient CookieHandler cookieHandler;
 
@@ -109,10 +103,8 @@ public class CookieManager extends ConfigTestElement implements TestStateListene
      * The default policy for new CookieManager elements is defined by 
      * {@link org.apache.jmeter.protocol.http.gui.CookiePanel#DEFAULT_POLICY CookiePanel#DEFAULT_POLICY}
      *
-     * @deprecated not intended for use outside this class (should have been created private)
      */
-    @Deprecated
-    public static final String DEFAULT_POLICY = CookieSpecs.BROWSER_COMPATIBILITY;
+    private static final String DEFAULT_POLICY = CookieSpecs.STANDARD;
     
     /**
      * Defines the implementation that is assumed when the JMX file does not contain an entry for it
@@ -121,10 +113,8 @@ public class CookieManager extends ConfigTestElement implements TestStateListene
      * The default implementation for new CookieManager elements is defined by 
      * {@link org.apache.jmeter.protocol.http.gui.CookiePanel#DEFAULT_IMPLEMENTATION CookiePanel#DEFAULT_IMPLEMENTATION}
      *
-     * @deprecated not intended for use outside this class (should have been created private)
      */
-    @Deprecated
-    public static final String DEFAULT_IMPLEMENTATION = HC3CookieHandler.class.getName();
+    private static final String DEFAULT_IMPLEMENTATION = HC4CookieHandler.class.getName();
 
     public CookieManager() {
         clearCookies(); // Ensure that there is always a collection available
@@ -308,11 +298,11 @@ public class CookieManager extends ConfigTestElement implements TestStateListene
 
         if (DELETE_NULL_COOKIES && (null == cv || cv.length()==0)) {
             if (log.isDebugEnabled()) {
-                log.debug("Dropping cookie with null value " + c.toString());
+                log.debug("Dropping cookie with null value {}", c.toString());
             }
         } else {
             if (log.isDebugEnabled()) {
-                log.debug("Add cookie to store " + c.toString());
+                log.debug("Add cookie to store {}", c.toString());
             }
             getCookies().addItem(c);
             if (SAVE_COOKIES)  {
@@ -401,8 +391,8 @@ public class CookieManager extends ConfigTestElement implements TestStateListene
             }
             if (match(cookie,newCookie)) {
                 if (log.isDebugEnabled()) {
-                    log.debug("New Cookie = " + newCookie.toString()
-                              + " removing matching Cookie " + cookie.toString());
+                    log.debug("New Cookie = {} removing matching Cookie {}",
+                            newCookie.toString(), cookie.toString());
                 }
                 iter.remove();
             }
@@ -416,10 +406,10 @@ public class CookieManager extends ConfigTestElement implements TestStateListene
         try {
             cookieHandler = (CookieHandler) ClassTools.construct(getImplementation(), getPolicy());
         } catch (JMeterException e) {
-            log.error("Unable to load or invoke class: " + getImplementation(), e);
+            log.error("Unable to load or invoke class: {}", getImplementation(), e);
         }
         if (log.isDebugEnabled()){
-            log.debug("Policy: "+getPolicy()+" Clear: "+getClearEachIteration());
+            log.debug("Policy: {} Clear: {}", getPolicy(), getClearEachIteration());
         }
     }
 

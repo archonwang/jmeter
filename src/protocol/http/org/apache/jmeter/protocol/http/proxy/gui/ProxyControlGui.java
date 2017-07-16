@@ -22,6 +22,8 @@ import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.event.ActionEvent;
@@ -32,6 +34,7 @@ import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.io.IOException;
 import java.net.BindException;
+import java.text.MessageFormat;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedList;
@@ -40,6 +43,7 @@ import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.DefaultComboBoxModel;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -49,6 +53,7 @@ import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 
@@ -63,6 +68,7 @@ import org.apache.jmeter.gui.UnsharedComponent;
 import org.apache.jmeter.gui.tree.JMeterTreeNode;
 import org.apache.jmeter.gui.util.HeaderAsPropertyRenderer;
 import org.apache.jmeter.gui.util.HorizontalPanel;
+import org.apache.jmeter.gui.util.JMeterToolBar;
 import org.apache.jmeter.gui.util.MenuFactory;
 import org.apache.jmeter.gui.util.PowerTableModel;
 import org.apache.jmeter.gui.util.VerticalPanel;
@@ -77,12 +83,12 @@ import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.exec.KeyToolUtils;
 import org.apache.jorphan.gui.GuiUtils;
 import org.apache.jorphan.gui.JLabeledTextField;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComponent, ActionListener, ItemListener,
         KeyListener, UnsharedComponent {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(ProxyControlGui.class);
 
     private static final long serialVersionUID = 232L;
 
@@ -96,7 +102,7 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
     private static final String USE_DEFAULT_HTTP_IMPL = ""; // $NON-NLS-1$
 
     private static final String SUGGESTED_EXCLUSIONS =
-            JMeterUtils.getPropDefault("proxy.excludes.suggested", "(?i).*\\.(bmp|css|js|gif|ico|jpe?g|png|swf|woff)"); // $NON-NLS-1$
+            JMeterUtils.getPropDefault("proxy.excludes.suggested", "(?i).*\\.(bmp|css|js|gif|ico|jpe?g|png|swf|woff|woff2)"); // $NON-NLS-1$
 
     private JTextField portField;
 
@@ -189,7 +195,9 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
 
     private static final String CHANGE_TARGET = "change_target"; // $NON-NLS-1$
 
-    private JButton stop, start, restart;
+    private JButton stop;
+    private JButton start;
+    private JButton restart;
 
     //+ action names
     private static final String STOP = "stop"; // $NON-NLS-1$
@@ -361,7 +369,6 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
     /** {@inheritDoc} */
     @Override
     public void itemStateChanged(ItemEvent e) {
-        // System.err.println(e.paramString());
         enableRestart();
     }
 
@@ -377,9 +384,6 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         } else if (source.equals(samplerRedirectAutomatically) && samplerRedirectAutomatically.isSelected()) {
             samplerFollowRedirects.setSelected(false);
         }
-
-        // System.err.println(action.paramString()+" "+command+ "
-        // "+action.getModifiers());
 
         if (command.equals(STOP)) {
             model.stopProxy();
@@ -402,13 +406,9 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
             includeModel.fireTableDataChanged();
             enableRestart();
         } else if (command.equals(DELETE_EXCLUDE)) {
-            excludeModel.removeRow(excludeTable.getSelectedRow());
-            excludeModel.fireTableDataChanged();
-            enableRestart();
+            deleteRowFromTable(excludeModel, excludeTable);
         } else if (command.equals(DELETE_INCLUDE)) {
-            includeModel.removeRow(includeTable.getSelectedRow());
-            includeModel.fireTableDataChanged();
-            enableRestart();
+            deleteRowFromTable(includeModel, includeTable);
         } else if (command.equals(CHANGE_TARGET)) {
             log.debug("Change target " + targetNodes.getSelectedItem());
             log.debug("In model " + model);
@@ -428,6 +428,34 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
             excludeModel.fireTableDataChanged();
             enableRestart();
         }
+    }
+
+    /**
+     * Delete row from table, select one if possible and enable restart button 
+     * @param tableModel {@link PowerTableModel} 
+     * @param table {@link JTable}
+     * 
+     */
+    private void deleteRowFromTable(PowerTableModel tableModel, JTable table) {
+        int selectedRow = table.getSelectedRow();
+        if(selectedRow >= 0) {
+            tableModel.removeRow(table.getSelectedRow());                
+        } else {
+            if(table.getRowCount()>0) {
+                tableModel.removeRow(0);
+            }
+        }
+        
+        tableModel.fireTableDataChanged();
+        if(table.getRowCount()>0) {
+            if(selectedRow == -1) {
+                table.setRowSelectionInterval(0, 0);
+            } else {
+                int rowToSelect = selectedRow>0 ? selectedRow-1:0;
+                table.setRowSelectionInterval(rowToSelect, rowToSelect);
+            }
+        }
+        enableRestart();
     }
 
     /**
@@ -507,7 +535,7 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
                 return;
             }
         }
-        // Proxy can take some while to start up; show a wating cursor
+        // Proxy can take some while to start up; show a waiting cursor
         Cursor cursor = getCursor();
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         // TODO somehow show progress
@@ -520,15 +548,22 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
             if (ProxyControl.isDynamicMode()) {
                 String[] details = model.getCertificateDetails();
                 StringBuilder sb = new StringBuilder();
+                sb.append("<html>");
                 sb.append(JMeterUtils.getResString("proxy_daemon_msg_rootca_cert"))  // $NON-NLS-1$
-                        .append(SPACE).append(KeyToolUtils.ROOT_CACERT_CRT_PFX)
-                        .append(SPACE).append(JMeterUtils.getResString("proxy_daemon_msg_created_in_bin"));
-                sb.append(NEW_LINE).append(JMeterUtils.getResString("proxy_daemon_msg_install_as_in_doc")); // $NON-NLS-1$
-                sb.append(NEW_LINE).append(JMeterUtils.getResString("proxy_daemon_msg_check_details")) // $NON-NLS-1$
-                    .append(NEW_LINE).append(NEW_LINE);
+                        .append("&nbsp;<b>").append(KeyToolUtils.ROOT_CACERT_CRT_PFX)
+                        .append("</b>&nbsp;").append(JMeterUtils.getResString("proxy_daemon_msg_created_in_bin"));
+                sb.append("<br>").append(JMeterUtils.getResString("proxy_daemon_msg_install_as_in_doc")); // $NON-NLS-1$
+                sb.append("<br><b>").append(MessageFormat.format(
+                        JMeterUtils.getResString("proxy_daemon_msg_check_expiration"),
+                        new Object[] {ProxyControl.CERT_VALIDITY})) // $NON-NLS-1$
+                    .append("</b><br>");
+                sb.append("<br>").append(JMeterUtils.getResString("proxy_daemon_msg_check_details"))
+                    .append("<ul>"); // $NON-NLS-1$
                 for(String detail : details) {
-                    sb.append(detail).append(NEW_LINE);
+                    sb.append("<li>").append(detail).append("</li>");
                 }
+                sb.append("</ul>").append("</html>");
+                
                 JOptionPane.showMessageDialog(this,
                     sb.toString(),
                     JMeterUtils.getResString("proxy_daemon_msg_rootca_cert") + SPACE // $NON-NLS-1$
@@ -558,7 +593,6 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
 
     private void enableRestart() {
         if (stop.isEnabled()) {
-            // System.err.println("Enable Restart");
             restart.setEnabled(true);
         }
     }
@@ -607,70 +641,84 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         add(makeTitlePanel(), BorderLayout.NORTH);
 
         JPanel mainPanel = new JPanel(new BorderLayout());
+        mainPanel.add(createControls(), BorderLayout.NORTH);
 
-        Box myBox = Box.createVerticalBox();
-        myBox.add(createPortPanel());
-        myBox.add(Box.createVerticalStrut(5));
-        myBox.add(createTestPlanContentPanel());
-        myBox.add(Box.createVerticalStrut(5));
-        myBox.add(createHTTPSamplerPanel());
-        myBox.add(Box.createVerticalStrut(5));
-        myBox.add(createContentTypePanel());
-        myBox.add(Box.createVerticalStrut(5));
-        mainPanel.add(myBox, BorderLayout.NORTH);
+        JTabbedPane tabbedPane = new JTabbedPane();
 
-        Box includeExcludePanel = Box.createVerticalBox();
-        includeExcludePanel.add(createIncludePanel());
-        includeExcludePanel.add(createExcludePanel());
-        includeExcludePanel.add(createNotifyListenersPanel());
-        mainPanel.add(includeExcludePanel, BorderLayout.CENTER);
-
-        mainPanel.add(createControls(), BorderLayout.SOUTH);
-
+        JPanel testPlanPanel = new VerticalPanel();
+        testPlanPanel.add(createTestPlanContentPanel());
+        testPlanPanel.add(Box.createVerticalStrut(5));
+        testPlanPanel.add(createHTTPSamplerPanel());
+        tabbedPane.add(JMeterUtils
+                .getResString("proxy_test_plan_creation"), testPlanPanel);
+        
+        JPanel filteringPanel = new VerticalPanel();
+        tabbedPane.add(JMeterUtils
+                .getResString("proxy_test_plan_filtering"), filteringPanel);
+        
+        filteringPanel.add(createContentTypePanel());        
+        filteringPanel.add(createIncludePanel());
+        filteringPanel.add(createExcludePanel());
+        filteringPanel.add(createNotifyListenersPanel());
+        
+        JPanel vPanel = new VerticalPanel();
+        vPanel.add(createPortPanel());
+        vPanel.add(Box.createVerticalStrut(5));
+        vPanel.add(tabbedPane);
+        mainPanel.add(vPanel, BorderLayout.CENTER);
+        
         add(mainPanel, BorderLayout.CENTER);
     }
 
     private JPanel createControls() {
+
+        String iconSize = JMeterUtils.getPropDefault(JMeterToolBar.TOOLBAR_ICON_SIZE, JMeterToolBar.DEFAULT_TOOLBAR_ICON_SIZE); 
+
         start = new JButton(JMeterUtils.getResString("start")); // $NON-NLS-1$
+        ImageIcon startImage = JMeterUtils.getImage("toolbar/" + iconSize + "/arrow-right-3.png");
+        start.setIcon(startImage);
         start.addActionListener(this);
         start.setActionCommand(START);
         start.setEnabled(true);
-
+        
         stop = new JButton(JMeterUtils.getResString("stop")); // $NON-NLS-1$
+        ImageIcon stopImage = JMeterUtils.getImage("toolbar/" + iconSize + "/process-stop-4.png");
+        stop.setIcon(stopImage);
         stop.addActionListener(this);
         stop.setActionCommand(STOP);
         stop.setEnabled(false);
 
+        ImageIcon restartImage = JMeterUtils.getImage("toolbar/" + iconSize + "/edit-redo-7.png");
         restart = new JButton(JMeterUtils.getResString("restart")); // $NON-NLS-1$
+        restart.setIcon(restartImage);
         restart.addActionListener(this);
         restart.setActionCommand(RESTART);
         restart.setEnabled(false);
 
         JPanel panel = new JPanel();
+        panel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(),
+                JMeterUtils.getResString("proxy_general_lifecycle"))); // $NON-NLS-1$
         panel.add(start);
+        panel.add(Box.createHorizontalStrut(10));
         panel.add(stop);
+        panel.add(Box.createHorizontalStrut(10));
         panel.add(restart);
         return panel;
     }
 
     private JPanel createPortPanel() {
-        portField = new JTextField(ProxyControl.DEFAULT_PORT_S, 5);
+        portField = new JTextField(ProxyControl.DEFAULT_PORT_S, 20);
         portField.setName(PORTFIELD);
         portField.addKeyListener(this);
+        Dimension portPreferredSize = portField.getPreferredSize();
+        portField.setMinimumSize(new Dimension((int) Math.round(portPreferredSize.width*0.75), portPreferredSize.height));
 
         JLabel label = new JLabel(JMeterUtils.getResString("port")); // $NON-NLS-1$
         label.setLabelFor(portField);
 
-        JPanel gPane = new JPanel(new BorderLayout());
-        gPane.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(),
-                JMeterUtils.getResString("proxy_general_settings"))); // $NON-NLS-1$
-
         HorizontalPanel panel = new HorizontalPanel();
         panel.add(label);
         panel.add(portField);
-        panel.add(Box.createHorizontalStrut(10));
-
-        gPane.add(panel, BorderLayout.WEST);
 
         sslDomains = new JLabeledTextField(JMeterUtils.getResString("proxy_domains")); // $NON-NLS-1$
         sslDomains.setEnabled(ProxyControl.isDynamicMode());
@@ -679,7 +727,26 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         } else {
             sslDomains.setToolTipText(JMeterUtils.getResString("proxy_domains_dynamic_mode_tooltip_java6"));
         }
-        gPane.add(sslDomains, BorderLayout.CENTER);
+
+        GridBagLayout gridBagLayout = new GridBagLayout();
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.gridheight = 1;
+        gbc.gridwidth = 1;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1;
+        gbc.weighty = 1;
+
+        JPanel gPane = new JPanel(gridBagLayout);
+        gPane.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(),
+                JMeterUtils.getResString("proxy_general_settings"))); // $NON-NLS-1$
+        gPane.add(panel, gbc.clone());
+        gbc.gridx++;
+        gbc.fill=GridBagConstraints.HORIZONTAL;
+        gbc.weightx = 6;
+        gPane.add(sslDomains, gbc);
         return gPane;
     }
 
@@ -724,11 +791,8 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         }
         m.addElement(USE_DEFAULT_HTTP_IMPL);
         samplerTypeName = new JComboBox<>(m);
-        samplerTypeName.setPreferredSize(new Dimension(150, 20));
         samplerTypeName.setSelectedItem(USE_DEFAULT_HTTP_IMPL);
         samplerTypeName.addItemListener(this);
-        JLabel label2 = new JLabel(JMeterUtils.getResString("proxy_sampler_type")); // $NON-NLS-1$
-        label2.setLabelFor(samplerTypeName);
 
         samplerRedirectAutomatically = new JCheckBox(JMeterUtils.getResString("follow_redirects_auto")); // $NON-NLS-1$
         samplerRedirectAutomatically.setSelected(false);
@@ -758,18 +822,50 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         JLabel labelPrefix = new JLabel(JMeterUtils.getResString("proxy_prefix_http_sampler_name")); // $NON-NLS-1$
         labelPrefix.setLabelFor(prefixHTTPSampleName);
 
-        HorizontalPanel panel = new HorizontalPanel();
+        JLabel labelSamplerType = new JLabel(JMeterUtils.getResString("proxy_sampler_type")); // $NON-NLS-1$
+        labelSamplerType.setLabelFor(samplerTypeName);
+              
+        GridBagLayout gridBagLayout = new GridBagLayout();
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.gridheight = 1;
+        gbc.gridwidth = 1;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1;
+        gbc.weighty = 1;
+        JPanel panel = new JPanel(gridBagLayout);
         panel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(),
                 JMeterUtils.getResString("proxy_sampler_settings"))); // $NON-NLS-1$
-        panel.add(label2);
-        panel.add(samplerTypeName);
-        panel.add(labelPrefix);
-        panel.add(prefixHTTPSampleName);
-        panel.add(samplerRedirectAutomatically);
-        panel.add(samplerFollowRedirects);
-        panel.add(useKeepAlive);
-        panel.add(samplerDownloadImages);
-
+        panel.add(labelPrefix, gbc.clone());
+        gbc.gridx++;
+        gbc.weightx = 3;
+        gbc.fill=GridBagConstraints.HORIZONTAL;
+        panel.add(prefixHTTPSampleName, gbc.clone());
+        gbc.weightx = 1;
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.fill=GridBagConstraints.VERTICAL;
+        panel.add(samplerDownloadImages, gbc.clone());
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.fill=GridBagConstraints.VERTICAL;
+        panel.add(samplerRedirectAutomatically, gbc.clone());
+        gbc.gridx++;
+        gbc.fill=GridBagConstraints.HORIZONTAL;
+        panel.add(samplerFollowRedirects, gbc.clone());
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.fill=GridBagConstraints.VERTICAL;
+        panel.add(useKeepAlive, gbc.clone());
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.fill=GridBagConstraints.VERTICAL;        
+        panel.add(labelSamplerType, gbc.clone());
+        gbc.gridx++;
+        gbc.fill=GridBagConstraints.HORIZONTAL;
+        panel.add(samplerTypeName, gbc.clone());
         return panel;
     }
 
@@ -863,7 +959,7 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         includeTable = new JTable(includeModel);
         JMeterUtils.applyHiDPI(includeTable);
         includeTable.getTableHeader().setDefaultRenderer(new HeaderAsPropertyRenderer());
-        includeTable.setPreferredScrollableViewportSize(new Dimension(100, 30));
+        includeTable.setPreferredScrollableViewportSize(new Dimension(80, 80));
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
@@ -880,7 +976,7 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
         excludeTable = new JTable(excludeModel);
         JMeterUtils.applyHiDPI(excludeTable);
         excludeTable.getTableHeader().setDefaultRenderer(new HeaderAsPropertyRenderer());
-        excludeTable.setPreferredScrollableViewportSize(new Dimension(100, 30));
+        excludeTable.setPreferredScrollableViewportSize(new Dimension(80, 80));
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(BorderFactory.createEtchedBorder(), JMeterUtils
@@ -980,7 +1076,7 @@ public class ProxyControlGui extends LogicControllerGui implements JMeterGUIComp
                  * java.lang.ThreadGroup However, that does not work correctly;
                  * whereas treating it as a Controller does. if (te instanceof
                  * ThreadGroup) { name.append(parent_name);
-                 * name.append(cur.getName()); name.append(seperator);
+                 * name.append(cur.getName()); name.append(separator);
                  * buildNodesModel(cur, name.toString(), level); } else
                  */
                 if (te instanceof Controller) {

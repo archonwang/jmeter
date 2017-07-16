@@ -18,32 +18,31 @@
 
 package org.apache.jmeter.assertions.gui;
 
+
 import java.awt.BorderLayout;
+
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JTextField;
-// import javax.swing.event.ChangeEvent;
+
 import org.apache.jmeter.assertions.XMLSchemaAssertion;
 import org.apache.jmeter.gui.util.HorizontalPanel;
 import org.apache.jmeter.gui.util.VerticalPanel;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
-
-// See Bug 34383
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * XMLSchemaAssertionGUI.java author <a href="mailto:d.maung@mdl.com">Dave Maung</a>
+ * XMLSchemaAssertionGUI.java
  *
  */
-
 public class XMLSchemaAssertionGUI extends AbstractAssertionGui {
     // class attributes
-     private static final Logger log = LoggingManager.getLoggerForClass();
+     private static final Logger log = LoggerFactory.getLogger(XMLSchemaAssertionGUI.class);
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
     private JTextField xmlSchema;
 
@@ -137,9 +136,4 @@ public class XMLSchemaAssertionGUI extends AbstractAssertionGui {
         mainPanel.add(assertionPanel, BorderLayout.NORTH);
         add(mainPanel, BorderLayout.CENTER);
     }
-
-    // public void stateChanged(ChangeEvent e) {
-    // log.debug("XMLSchemaAssertionGui.stateChanged() called");
-    // }
-
 }

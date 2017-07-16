@@ -18,25 +18,24 @@
 
 package org.apache.jmeter.samplers;
 
-import org.apache.log.Logger;
-import org.apache.jorphan.logging.LoggingManager;
-
-import java.util.List;
-import java.util.ArrayList;
 import java.io.ObjectStreamException;
 import java.io.Serializable;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 
 /**
  * Lars-Erik Helander provided the idea (and original implementation) for the
  * caching functionality (sampleStore).
  */
-
 public class HoldSampleSender extends AbstractSampleSender implements Serializable {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(HoldSampleSender.class);
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
-    private final List<SampleEvent> sampleStore = new ArrayList<>();
+    private final ConcurrentLinkedQueue<SampleEvent> sampleStore = new ConcurrentLinkedQueue<>();
 
     private final RemoteSampleListener listener;
 
@@ -56,30 +55,25 @@ public class HoldSampleSender extends AbstractSampleSender implements Serializab
 
     @Override
     public void testEnded(String host) {
-        log.info("Test Ended on " + host);
+        log.info("Test Ended on {}", host);
         try {
             for (SampleEvent se : sampleStore) {
                 listener.sampleOccurred(se);
             }
             listener.testEnded(host);
             sampleStore.clear();
-        } catch (Throwable ex) {
+        } catch (Error | RuntimeException ex) { // NOSONAR We want to have errors logged in log file
             log.error("testEnded(host)", ex);
-            if (ex instanceof Error){
-                throw (Error) ex;
-            }
-            if (ex instanceof RuntimeException){
-                throw (RuntimeException) ex;
-            }
+            throw ex;
+        } catch (Exception ex) { 
+            log.error("testEnded(host)", ex);
         }
 
     }
 
     @Override
     public void sampleOccurred(SampleEvent e) {
-        synchronized (sampleStore) {
-            sampleStore.add(e);
-        }
+        sampleStore.add(e);
     }
 
     /**
@@ -89,7 +83,7 @@ public class HoldSampleSender extends AbstractSampleSender implements Serializab
      * @throws ObjectStreamException
      *             never
      */
-    private Object readResolve() throws ObjectStreamException{
+    protected Object readResolve() throws ObjectStreamException{
         log.warn("Using HoldSampleSender for this test run, ensure you have configured enough memory (-Xmx) for your test"); // server        
         return this;
     }

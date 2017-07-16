@@ -22,18 +22,26 @@ import java.io.Serializable;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.collections.map.LRUMap;
-import org.apache.commons.httpclient.HttpMethod;
-import org.apache.commons.httpclient.URIException;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
+import org.apache.http.Header;
+import org.apache.http.HeaderElement;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.client.utils.DateUtils;
+import org.apache.http.message.BasicHeader;
 import org.apache.jmeter.config.ConfigTestElement;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.protocol.http.sampler.HTTPSampleResult;
@@ -42,8 +50,8 @@ import org.apache.jmeter.testelement.TestIterationListener;
 import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.testelement.property.BooleanProperty;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Handles HTTP Caching
@@ -52,9 +60,9 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
 
     private static final Date EXPIRED_DATE = new Date(0L);
 
-    private static final long serialVersionUID = 234L;
+    private static final long serialVersionUID = 235L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(CacheManager.class);
 
     private static final String[] CACHEABLE_METHODS = JMeterUtils.getPropDefault("cacheable_methods", "GET").split("[ ,]");
 
@@ -98,27 +106,53 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
      * Perhaps add original response later?
      */
     // package-protected to allow access by unit-test cases
-    static class CacheEntry{
+    static class CacheEntry {
         private final String lastModified;
         private final String etag;
         private final Date expires;
-        public CacheEntry(String lastModified, Date expires, String etag){
-           this.lastModified = lastModified;
-           this.etag = etag;
-           this.expires = expires;
-       }
+        private final String varyHeader;
+
+        /**
+         * 
+         * @param lastModified
+         * @param expires
+         * @param etag
+         * @deprecated use {@link CacheEntry(String lastModified, Date expires, String etag, String varyHeader)} instead
+         */
+        @Deprecated
+        public CacheEntry(String lastModified, Date expires, String etag) {
+            this.lastModified = lastModified;
+            this.etag = etag;
+            this.expires = expires;
+            this.varyHeader = null;
+        }
+
+        public CacheEntry(String lastModified, Date expires, String etag, String varyHeader) {
+            this.lastModified = lastModified;
+            this.etag = etag;
+            this.expires = expires;
+            this.varyHeader = varyHeader;
+        }
+
         public String getLastModified() {
             return lastModified;
         }
+
         public String getEtag() {
             return etag;
         }
+
         @Override
-        public String toString(){
-            return lastModified+" "+etag;
+        public String toString() {
+            return lastModified + " " + etag + " " + varyHeader;
         }
+
         public Date getExpires() {
             return expires;
+        }
+
+        public String getVaryHeader() {
+            return varyHeader;
         }
     }
 
@@ -129,52 +163,34 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
      * @param res result
      */
     public void saveDetails(URLConnection conn, HTTPSampleResult res){
-        if (isCacheable(res) && !hasVaryHeader(conn)){
+        final String varyHeader = conn.getHeaderField(HTTPConstants.VARY);
+        if (isCacheable(res, varyHeader)){
             String lastModified = conn.getHeaderField(HTTPConstants.LAST_MODIFIED);
             String expires = conn.getHeaderField(HTTPConstants.EXPIRES);
             String etag = conn.getHeaderField(HTTPConstants.ETAG);
             String url = conn.getURL().toString();
             String cacheControl = conn.getHeaderField(HTTPConstants.CACHE_CONTROL);
             String date = conn.getHeaderField(HTTPConstants.DATE);
-            setCache(lastModified, cacheControl, expires, etag, url, date);
+            setCache(lastModified, cacheControl, expires, etag, url, date, getVaryHeader(varyHeader, asHeaders(res.getRequestHeaders())));
         }
     }
 
-    private boolean hasVaryHeader(URLConnection conn) {
-        return conn.getHeaderField(HTTPConstants.VARY) != null;
-    }
-
-    /**
-     * Save the Last-Modified, Etag, and Expires headers if the result is
-     * cacheable. Version for Commons HttpClient implementation.
-     *
-     * @param method
-     *            {@link HttpMethod} to get header information from
-     * @param res
-     *            result to decide if result is cacheable
-     * @throws URIException
-     *             if extraction of the uri from <code>method</code> fails
-     * @deprecated HC3.1 will be dropped in upcoming version
-     */
-    @Deprecated
-    public void saveDetails(HttpMethod method, HTTPSampleResult res) throws URIException{
-        if (isCacheable(res) && !hasVaryHeader(method)){
-            String lastModified = getHeader(method ,HTTPConstants.LAST_MODIFIED);
-            String expires = getHeader(method ,HTTPConstants.EXPIRES);
-            String etag = getHeader(method ,HTTPConstants.ETAG);
-            String url = method.getURI().toString();
-            String cacheControl = getHeader(method, HTTPConstants.CACHE_CONTROL);
-            String date = getHeader(method, HTTPConstants.DATE);
-            setCache(lastModified, cacheControl, expires, etag, url, date);
+    private Pair<String, String> getVaryHeader(String headerName, Header[] reqHeaders) {
+        if (headerName == null) {
+            return null;
         }
-    }
-
-    /**
-     * @deprecated HC3.1 will be dropped in upcoming version
-     */
-    @Deprecated
-    private boolean hasVaryHeader(HttpMethod method) {
-        return getHeader(method, HTTPConstants.VARY) != null;
+        final Set<String> names = new HashSet<>(Arrays.asList(headerName.split(",\\s*")));
+        final Map<String, List<String>> values = new HashMap<>();
+        for (final String name: names) {
+            values.put(name, new ArrayList<String>());
+        }
+        for (Header header: reqHeaders) {
+            if (names.contains(header.getName())) {
+                log.debug("Found vary value {} for {} in response", header, headerName);
+                values.get(header.getName()).add(header.getValue());
+            }
+        }
+        return new ImmutablePair<>(headerName, values.toString());
     }
 
     /**
@@ -187,22 +203,19 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
      *            result to decide if result is cacheable
      */
     public void saveDetails(HttpResponse method, HTTPSampleResult res) {
-        if (isCacheable(res) && !hasVaryHeader(method)){
+        final String varyHeader = getHeader(method, HTTPConstants.VARY);
+        if (isCacheable(res, varyHeader)){
             String lastModified = getHeader(method ,HTTPConstants.LAST_MODIFIED);
             String expires = getHeader(method ,HTTPConstants.EXPIRES);
             String etag = getHeader(method ,HTTPConstants.ETAG);
             String cacheControl = getHeader(method, HTTPConstants.CACHE_CONTROL);
             String date = getHeader(method, HTTPConstants.DATE);
-            setCache(lastModified, cacheControl, expires, etag, res.getUrlAsString(), date); // TODO correct URL?
+            setCache(lastModified, cacheControl, expires, etag, res.getUrlAsString(), date, getVaryHeader(varyHeader, asHeaders(res.getRequestHeaders()))); // TODO correct URL?
         }
     }
 
-    private boolean hasVaryHeader(HttpResponse method) {
-        return getHeader(method, HTTPConstants.VARY) != null;
-    }
-
     // helper method to save the cache entry
-    private void setCache(String lastModified, String cacheControl, String expires, String etag, String url, String date) {
+    private void setCache(String lastModified, String cacheControl, String expires, String etag, String url, String date, Pair<String, String> varyHeader) {
         if (log.isDebugEnabled()){
             log.debug("setCache("
                   + lastModified + "," 
@@ -215,78 +228,99 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
         }
         Date expiresDate = null; // i.e. not using Expires
         if (useExpires) {// Check that we are processing Expires/CacheControl
-            final String MAX_AGE = "max-age=";
-            
+            final String maxAge = "max-age=";
+
             if(cacheControl != null && cacheControl.contains("no-store")) {
                 // We must not store an CacheEntry, otherwise a 
                 // conditional request may be made
                 return;
             }
             if (expires != null) {
-                try {
-                    expiresDate = org.apache.http.client.utils.DateUtils.parseDate(expires);
-                } catch (IllegalArgumentException e) {
-                    if (log.isDebugEnabled()){
-                        log.debug("Unable to parse Expires: '"+expires+"' "+e);
-                    }
-                    expiresDate = CacheManager.EXPIRED_DATE; // invalid dates must be treated as expired
-                }
+                expiresDate = extractExpiresDateFromExpires(expires);
             }
             // if no-cache is present, ensure that expiresDate remains null, which forces revalidation
             if(cacheControl != null && !cacheControl.contains("no-cache")) {
-                // the max-age directive overrides the Expires header,
-                if(cacheControl.contains(MAX_AGE)) {
-                    long maxAgeInSecs = Long.parseLong(
-                            cacheControl.substring(cacheControl.indexOf(MAX_AGE)+MAX_AGE.length())
-                                .split("[, ]")[0] // Bug 51932 - allow for optional trailing attributes
-                            );
-                    expiresDate=new Date(System.currentTimeMillis()+maxAgeInSecs*1000);
-
-                } else if(expires==null) { // No max-age && No expires
-                    if(!StringUtils.isEmpty(lastModified) && !StringUtils.isEmpty(date)) {
-                        try {
-                            Date responseDate = DateUtils.parseDate( date );
-                            Date lastModifiedAsDate = DateUtils.parseDate( lastModified );
-                            // see https://developer.mozilla.org/en/HTTP_Caching_FAQ
-                            // see http://www.ietf.org/rfc/rfc2616.txt#13.2.4 
-                            expiresDate=new Date(System.currentTimeMillis()
-                                    +Math.round((responseDate.getTime()-lastModifiedAsDate.getTime())*0.1));
-                        } catch(IllegalArgumentException e) {
-                            // date or lastModified may be null or in bad format
-                            if(log.isWarnEnabled()) {
-                                log.warn("Failed computing expiration date with following info:"
-                                    +lastModified + "," 
-                                    + cacheControl + ","
-                                    + expires + "," 
-                                    + etag + ","
-                                    + url + ","
-                                    + date);
-                            }
-                            // TODO Can't see anything in SPEC
-                            expiresDate = new Date(System.currentTimeMillis()+ONE_YEAR_MS);
-                        }
-                    } else {
-                        // TODO Can't see anything in SPEC
-                        expiresDate = new Date(System.currentTimeMillis()+ONE_YEAR_MS);
-                    }
-                }  
+                expiresDate = extractExpiresDateFromCacheControl(lastModified,
+                        cacheControl, expires, etag, url, date, maxAge, expiresDate);
                 // else expiresDate computed in (expires!=null) condition is used
             }
         }
-        getCache().put(url, new CacheEntry(lastModified, expiresDate, etag));
+        if (varyHeader != null) {
+            if (log.isDebugEnabled()) {
+                log.debug("Set entry into cache for url {} and vary {} ({})", url,
+                        varyHeader,
+                        varyUrl(url, varyHeader.getLeft(), varyHeader.getRight()));
+            }
+            getCache().put(url, new CacheEntry(lastModified, expiresDate, etag, varyHeader.getLeft()));
+            getCache().put(varyUrl(url, varyHeader.getLeft(), varyHeader.getRight()), new CacheEntry(lastModified, expiresDate, etag, null));
+        } else {
+            getCache().put(url, new CacheEntry(lastModified, expiresDate, etag, null));
+        }
     }
 
-    /**
-     * Helper method to deal with missing headers - Commons HttpClient
-     * @param method Http method
-     * @param name Header name
-     * @return Header value
-     * @deprecated HC3.1 will be dropped in upcoming version
-     */
-    @Deprecated
-    private String getHeader(HttpMethod method, String name){
-        org.apache.commons.httpclient.Header hdr = method.getResponseHeader(name);
-        return hdr != null ? hdr.getValue() : null;
+    private Date extractExpiresDateFromExpires(String expires) {
+        Date expiresDate;
+        try {
+            expiresDate = org.apache.http.client.utils.DateUtils
+                    .parseDate(expires);
+        } catch (IllegalArgumentException e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Unable to parse Expires: '" + expires + "' " + e);
+            }
+            expiresDate = CacheManager.EXPIRED_DATE; // invalid dates must be
+                                                     // treated as expired
+        }
+        return expiresDate;
+    }
+
+    private Date extractExpiresDateFromCacheControl(String lastModified,
+            String cacheControl, String expires, String etag, String url,
+            String date, final String maxAge, Date defaultExpiresDate) {
+        // the max-age directive overrides the Expires header,
+        if (cacheControl.contains(maxAge)) {
+            long maxAgeInSecs = Long.parseLong(cacheControl
+                    .substring(cacheControl.indexOf(maxAge) + maxAge.length())
+                    .split("[, ]")[0] // Bug 51932 - allow for optional trailing
+                                      // attributes
+            );
+            return new Date(System.currentTimeMillis() + maxAgeInSecs * 1000);
+
+        } else if (expires == null) { // No max-age && No expires
+            return calcExpiresDate(lastModified, cacheControl, expires, etag,
+                    url, date);
+        }
+        return defaultExpiresDate;
+    }
+
+    private Date calcExpiresDate(String lastModified, String cacheControl,
+            String expires, String etag, String url, String date) {
+        if(!StringUtils.isEmpty(lastModified) && !StringUtils.isEmpty(date)) {
+            try {
+                Date responseDate = DateUtils.parseDate(date);
+                Date lastModifiedAsDate = DateUtils.parseDate(lastModified);
+                // see https://developer.mozilla.org/en/HTTP_Caching_FAQ
+                // see http://www.ietf.org/rfc/rfc2616.txt#13.2.4 
+                return new Date(System.currentTimeMillis() + Math.round(
+                        (responseDate.getTime() - lastModifiedAsDate.getTime())
+                                * 0.1));
+            } catch(IllegalArgumentException e) {
+                // date or lastModified may be null or in bad format
+                if(log.isWarnEnabled()) {
+                    log.warn("Failed computing expiration date with following info:"
+                        +lastModified + "," 
+                        + cacheControl + ","
+                        + expires + "," 
+                        + etag + ","
+                        + url + ","
+                        + date);
+                }
+                // TODO Can't see anything in SPEC
+                return new Date(System.currentTimeMillis() + ONE_YEAR_MS);
+            }
+        } else {
+            // TODO Can't see anything in SPEC
+            return new Date(System.currentTimeMillis() + ONE_YEAR_MS);
+        }
     }
 
     // Apache HttpClient
@@ -299,7 +333,10 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
      * Is the sample result OK to cache?
      * i.e is it in the 2xx range or equal to 304, and is it a cacheable method?
      */
-    private boolean isCacheable(HTTPSampleResult res){
+    private boolean isCacheable(HTTPSampleResult res, String varyHeader){
+        if ("*".equals(varyHeader)) {
+            return false;
+        }
         final String responseCode = res.getResponseCode();
         return isCacheableMethod(res) 
                 && (("200".compareTo(responseCode) <= 0  // $NON-NLS-1$
@@ -323,43 +360,14 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
      * <li>If-Modified-Since</li>
      * <li>If-None-Match</li>
      * </ul>
-     * Commons HttpClient version
-     * @param url URL to look up in cache
-     * @param method where to set the headers
-     * @deprecated HC3.1 will be dropped in upcoming version
-     */
-    @Deprecated
-    public void setHeaders(URL url, HttpMethod method) {
-        CacheEntry entry = getCache().get(url.toString());
-        if (log.isDebugEnabled()){
-            log.debug(method.getName()+"(OACH) "+url.toString()+" "+entry);
-        }
-        if (entry != null){
-            final String lastModified = entry.getLastModified();
-            if (lastModified != null){
-                method.setRequestHeader(HTTPConstants.IF_MODIFIED_SINCE, lastModified);
-            }
-            final String etag = entry.getEtag();
-            if (etag != null){
-                method.setRequestHeader(HTTPConstants.IF_NONE_MATCH, etag);
-            }
-        }
-    }
-
-    /**
-     * Check the cache, and if there is a match, set the headers:
-     * <ul>
-     * <li>If-Modified-Since</li>
-     * <li>If-None-Match</li>
-     * </ul>
      * Apache HttpClient version.
      * @param url {@link URL} to look up in cache
      * @param request where to set the headers
      */
     public void setHeaders(URL url, HttpRequestBase request) {
-        CacheEntry entry = getCache().get(url.toString());
+        CacheEntry entry = getEntry(url.toString(), request.getAllHeaders());
         if (log.isDebugEnabled()){
-            log.debug(request.getMethod()+"(OAH) "+url.toString()+" "+entry);
+            log.debug("{}(OAH) {} {}", request.getMethod(), url.toString(), entry);
         }
         if (entry != null){
             final String lastModified = entry.getLastModified();
@@ -383,9 +391,9 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
      * @param conn where to set the headers
      */
     public void setHeaders(HttpURLConnection conn, URL url) {
-        CacheEntry entry = getCache().get(url.toString());
+        CacheEntry entry = getEntry(url.toString(), asHeaders(conn.getHeaderFields()));
         if (log.isDebugEnabled()){
-            log.debug(conn.getRequestMethod()+"(Java) "+url.toString()+" "+entry);
+            log.debug("{}(Java) {} {}", conn.getRequestMethod(), url.toString(), entry);
         }
         if (entry != null){
             final String lastModified = entry.getLastModified();
@@ -400,35 +408,129 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
     }
 
     /**
-     * Check the cache, if the entry has an expires header and the entry has not expired, return true<br>
-     * @param url {@link URL} to look up in cache
-     * @return <code>true</code> if entry has an expires header and the entry has not expired, else <code>false</code>
+     * Check the cache, if the entry has an expires header and the entry has not
+     * expired, return <code>true</code><br>
+     * 
+     * @param url
+     *            {@link URL} to look up in cache
+     * @return <code>true</code> if entry has an expires header and the entry
+     *         has not expired, else <code>false</code>
+     * @deprecated use a version of {@link CacheManager#inCache(URL, Header[])}
+     *             or
+     *             {@link CacheManager#inCache(URL, org.apache.jmeter.protocol.http.control.Header[])}
      */
+    @Deprecated
     public boolean inCache(URL url) {
-        CacheEntry entry = getCache().get(url.toString());
-        if (log.isDebugEnabled()){
-            log.debug("inCache "+url.toString()+" "+entry);
+        return entryStillValid(getEntry(url.toString(), null));
+    }
+
+    public boolean inCache(URL url, Header[] allHeaders) {
+        return entryStillValid(getEntry(url.toString(), allHeaders));
+    }
+
+    public boolean inCache(URL url, org.apache.jmeter.protocol.http.control.Header[] allHeaders) {
+        return entryStillValid(getEntry(url.toString(), asHeaders(allHeaders)));
+    }
+
+    private Header[] asHeaders(
+            org.apache.jmeter.protocol.http.control.Header[] allHeaders) {
+        final List<Header> result = new ArrayList<>(allHeaders.length);
+        for (org.apache.jmeter.protocol.http.control.Header header: allHeaders) {
+            result.add(new HeaderAdapter(header));
         }
-        if (entry != null){
+        return result.toArray(new Header[result.size()]);
+    }
+
+    private Header[] asHeaders(String allHeaders) {
+        List<Header> result = new ArrayList<>();
+        for (String line: allHeaders.split("\\n")) {
+            String[] splitted = line.split(": ", 2);
+            if (splitted.length == 2) {
+                result.add(new BasicHeader(splitted[0], splitted[1]));
+            }
+        }
+        return result.toArray(new Header[result.size()]);
+    }
+
+    private Header[] asHeaders(Map<String, List<String>> headers) {
+        List<Header> result = new ArrayList<>(headers.size());
+        for (Map.Entry<String, List<String>> header: headers.entrySet()) {
+            new BasicHeader(header.getKey(), String.join(", ", header.getValue()));
+        }
+        return result.toArray(new Header[result.size()]);
+    }
+
+    private static class HeaderAdapter implements Header {
+
+        private final org.apache.jmeter.protocol.http.control.Header delegate;
+
+        public HeaderAdapter(org.apache.jmeter.protocol.http.control.Header delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public HeaderElement[] getElements() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public String getName() {
+            return delegate.getName();
+        }
+
+        @Override
+        public String getValue() {
+            return delegate.getValue();
+        }
+
+    }
+
+    private boolean entryStillValid(CacheEntry entry) {
+        log.debug("Check if entry {} is still valid", entry);
+        if (entry != null && entry.getVaryHeader() == null) {
             final Date expiresDate = entry.getExpires();
             if (expiresDate != null) {
                 if (expiresDate.after(new Date())) {
-                    if (log.isDebugEnabled()){
-                        log.debug("Expires= " + expiresDate + " (Valid)");
-                    }
+                    log.debug("Expires= {} (Valid)", expiresDate);
                     return true;
                 } else {
-                    if (log.isDebugEnabled()){
-                        log.debug("Expires= " + expiresDate + " (Expired)");
-                    }
+                    log.debug("Expires= {} (Expired)", expiresDate);
                 }
             }
         }
         return false;
     }
 
+    private CacheEntry getEntry(String url, Header[] headers) {
+        CacheEntry entry = getCache().get(url);
+        log.debug("Cache: {}", getCache());
+        log.debug("inCache {} {} {}", url, entry, headers);
+        if (entry == null) {
+            log.debug("No entry found for url {}", url);
+            return null;
+        }
+        if (entry.getVaryHeader() == null) {
+            log.debug("Entry {} with no vary found for url {}", entry, url);
+            return entry;
+        }
+        if (headers == null) {
+            log.debug("Entry {} found, but it should depend on vary {} for url {}", entry, entry.getVaryHeader(), url);
+            return null;
+        }
+        Pair<String, String> varyPair = getVaryHeader(entry.getVaryHeader(), headers);
+        if (varyPair != null) {
+            log.debug("Looking again for {} because of {} with vary: {} ({})", url, entry, entry.getVaryHeader(), varyPair);
+            return getEntry(varyUrl(url, entry.getVaryHeader(), varyPair.getRight()), null);
+        }
+        return null;
+    }
+
+    private String varyUrl(String url, String headerName, String headerValue) {
+        return "vary-" + headerName + "-" + headerValue + "-" + url;
+    }
+
     private Map<String, CacheEntry> getCache() {
-        return localCache != null?localCache:threadCache.get();
+        return localCache != null ? localCache : threadCache.get();
     }
 
     public boolean getClearEachIteration() {
@@ -476,7 +578,7 @@ public class CacheManager extends ConfigTestElement implements TestStateListener
                 // Bug 51942 - this map may be used from multiple threads
                 @SuppressWarnings("unchecked") // LRUMap is not generic currently
                 Map<String, CacheEntry> map = new LRUMap(getMaxSize());
-                return Collections.<String, CacheEntry>synchronizedMap(map);
+                return Collections.synchronizedMap(map);
             }
         };
     }

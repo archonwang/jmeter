@@ -63,7 +63,7 @@ public class ErrorsSummaryConsumer extends AbstractSummaryConsumer<Long> {
         result.addResult(new ValueResultData(key != null ? key : JMeterUtils
                 .getResString("reportgenerator_summary_total")));
         result.addResult(new ValueResultData(data));
-        result.addResult(new ValueResultData(Double.valueOf(((double) data.longValue() * 100 / errorCount))));
+        result.addResult(new ValueResultData(Double.valueOf((double) data.longValue() * 100 / errorCount)));
         result.addResult(new ValueResultData(Double.valueOf((double) data.longValue() * 100
                 / getOverallInfo().getData().doubleValue())));
         return result;
@@ -78,22 +78,31 @@ public class ErrorsSummaryConsumer extends AbstractSummaryConsumer<Long> {
      */
     @Override
     protected String getKeyFromSample(Sample sample) {
+        return getErrorKey(sample);
+    }
+
+    /**
+     * @param sample {@link Sample}
+     * @return String Error key for sample 
+     */
+    static String getErrorKey(Sample sample) {
         String responseCode = sample.getResponseCode();
         String responseMessage = sample.getResponseMessage();
         String key = responseCode + (!StringUtils.isEmpty(responseMessage) ? 
-                 "/" + StringEscapeUtils.escapeJson(responseMessage) : "");
-        if (isSuccessCode(responseCode)) {
+                 "/" + StringEscapeUtils.escapeJson(StringEscapeUtils.escapeHtml4(responseMessage)) : "");
+        if (isSuccessCode(responseCode) || 
+                (StringUtils.isEmpty(responseCode) && 
+                        !StringUtils.isEmpty(sample.getFailureMessage()))) {
             key = ASSERTION_FAILED;
             if (ASSERTION_RESULTS_FAILURE_MESSAGE) {
                 String msg = sample.getFailureMessage();
                 if (!StringUtils.isEmpty(msg)) {
-                    key = StringEscapeUtils.escapeJson(msg);
+                    key = StringEscapeUtils.escapeJson(StringEscapeUtils.escapeHtml4(msg));
                 }
             }
         }
         return key;
     }
-
     /*
      * (non-Javadoc)
      * 
@@ -139,7 +148,7 @@ public class ErrorsSummaryConsumer extends AbstractSummaryConsumer<Long> {
         if (StringUtils.isNumeric(codeAsString)) {
             try {
                 int code = Integer.parseInt(codeAsString);
-                return (code >= 200 && code <= 399);
+                return code >= 200 && code <= 399;
             } catch (NumberFormatException ex) {
                 return false;
             }

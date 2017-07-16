@@ -35,11 +35,13 @@ import java.util.regex.Pattern;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.config.Arguments;
 import org.apache.jmeter.samplers.SampleResult;
+import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.visualizers.backend.AbstractBackendListenerClient;
 import org.apache.jmeter.visualizers.backend.BackendListenerContext;
 import org.apache.jmeter.visualizers.backend.SamplerMetric;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.apache.jmeter.visualizers.backend.UserMetric;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Graphite based Listener using Pickle Protocol
@@ -65,7 +67,7 @@ public class GraphiteBackendListenerClient extends AbstractBackendListenerClient
     private static final String TEST_CONTEXT_NAME = "test";
     private static final String ALL_CONTEXT_NAME = "all";
 
-    private static final Logger LOGGER = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(GraphiteBackendListenerClient.class);
     private static final String DEFAULT_METRICS_PREFIX = "jmeter."; //$NON-NLS-1$
     private static final String CUMULATED_METRICS = "__cumulated__"; //$NON-NLS-1$
     // User Metrics
@@ -108,7 +110,7 @@ public class GraphiteBackendListenerClient extends AbstractBackendListenerClient
 
     private static final String METRIC_ALL_HITS_COUNT        = METRIC_HITS_PREFIX+METRIC_SEPARATOR+METRIC_COUNT;
 
-    private static final long ONE_SECOND = 1L;
+    private static final long SEND_INTERVAL = JMeterUtils.getPropDefault("backend_graphite.send_interval", 5);
     private static final int MAX_POOL_SIZE = 1;
     private static final String DEFAULT_PERCENTILES = "90;95;99";
     private static final String SEPARATOR = ";"; //$NON-NLS-1$
@@ -161,11 +163,12 @@ public class GraphiteBackendListenerClient extends AbstractBackendListenerClient
                 metric.resetForTimeInterval();
             }
         }        
-        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_MIN_ACTIVE_THREADS, Integer.toString(getUserMetrics().getMinActiveThreads()));
-        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_MAX_ACTIVE_THREADS, Integer.toString(getUserMetrics().getMaxActiveThreads()));
-        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_MEAN_ACTIVE_THREADS, Integer.toString(getUserMetrics().getMeanActiveThreads()));
-        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_STARTED_THREADS, Integer.toString(getUserMetrics().getStartedThreads()));
-        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_FINISHED_THREADS, Integer.toString(getUserMetrics().getFinishedThreads()));
+        UserMetric userMetric = getUserMetrics();
+        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_MIN_ACTIVE_THREADS, Integer.toString(userMetric.getMinActiveThreads()));
+        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_MAX_ACTIVE_THREADS, Integer.toString(userMetric.getMaxActiveThreads()));
+        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_MEAN_ACTIVE_THREADS, Integer.toString(userMetric.getMeanActiveThreads()));
+        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_STARTED_THREADS, Integer.toString(userMetric.getStartedThreads()));
+        graphiteMetricsManager.addMetric(timestampInSeconds, TEST_CONTEXT_NAME, METRIC_FINISHED_THREADS, Integer.toString(userMetric.getFinishedThreads()));
 
         graphiteMetricsManager.writeAndSendMetrics();
     }
@@ -236,8 +239,9 @@ public class GraphiteBackendListenerClient extends AbstractBackendListenerClient
             BackendListenerContext context) {
         boolean samplersToFilterMatch;
         synchronized (LOCK) {
+            UserMetric userMetrics = getUserMetrics();
             for (SampleResult sampleResult : sampleResults) {
-                getUserMetrics().add(sampleResult);
+                userMetrics.add(sampleResult);
                 
                 if(!summaryOnly) {
                     if (useRegexpForSamplersList) {
@@ -290,7 +294,7 @@ public class GraphiteBackendListenerClient extends AbstractBackendListenerClient
                             percentileValue);
 
                 } catch (Exception e) {
-                    LOGGER.error("Error parsing percentile:'" + percentilesString + "'", e);
+                    log.error("Error parsing percentile: '{}'", percentilesString, e);
                 }
             }
         }
@@ -306,25 +310,26 @@ public class GraphiteBackendListenerClient extends AbstractBackendListenerClient
         }
         scheduler = Executors.newScheduledThreadPool(MAX_POOL_SIZE);
         // Don't change this as metrics are per second
-        this.timerHandle = scheduler.scheduleAtFixedRate(this, ONE_SECOND, ONE_SECOND, TimeUnit.SECONDS);
+        this.timerHandle = scheduler.scheduleAtFixedRate(this, SEND_INTERVAL, SEND_INTERVAL, TimeUnit.SECONDS);
     }
 
     @Override
     public void teardownTest(BackendListenerContext context) throws Exception {
         boolean cancelState = timerHandle.cancel(false);
-        if(LOGGER.isDebugEnabled()) {
-            LOGGER.debug("Canceled state:"+cancelState);
-        }
+        log.debug("Canceled state: {}", cancelState);
         scheduler.shutdown();
         try {
             scheduler.awaitTermination(30, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
-            LOGGER.error("Error waiting for end of scheduler");
+            log.error("Error waiting for end of scheduler");
+            Thread.currentThread().interrupt();
         }
         // Send last set of data before ending
         sendMetrics();
-        
-        samplersToFilter.clear();
+
+        if (samplersToFilter != null) {
+            samplersToFilter.clear();
+        }
         graphiteMetricsManager.destroy();
         super.teardownTest(context);
     }

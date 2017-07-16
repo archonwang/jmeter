@@ -48,16 +48,16 @@ import org.apache.jmeter.protocol.http.sampler.HTTPSamplerBase;
 import org.apache.jmeter.protocol.http.util.HTTPConstants;
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class HC4CookieHandler implements CookieHandler {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(HC4CookieHandler.class);
 
     // Needed by CookiePanel
-    public static final String DEFAULT_POLICY_NAME = CookieSpecs.STANDARD; 
+    public static final String DEFAULT_POLICY_NAME = CookieSpecs.STANDARD; // NOSONAR 
 
-    public static final String[] AVAILABLE_POLICIES = new String[]{
+    private static final String[] AVAILABLE_POLICIES = new String[]{ 
         DEFAULT_POLICY_NAME,
         CookieSpecs.STANDARD_STRICT,
         CookieSpecs.IGNORE_COOKIES,
@@ -87,9 +87,16 @@ public class HC4CookieHandler implements CookieHandler {
             .register(CookieSpecs.NETSCAPE, new NetscapeDraftSpecProvider())
             .build();
 
+    /**
+     * Default constructor that uses {@link HC4CookieHandler#DEFAULT_POLICY_NAME}
+     */
+    public HC4CookieHandler() {
+        this(DEFAULT_POLICY_NAME);
+    }
+    
     public HC4CookieHandler(String policy) {
         super();
-        if (policy.equals(org.apache.commons.httpclient.cookie.CookiePolicy.DEFAULT)) { // tweak diff HC3 vs HC4
+        if (policy.equalsIgnoreCase("default")) { // tweak diff HC3 vs HC4
             policy = CookieSpecs.DEFAULT;
         }
         HttpClientContext context = HttpClientContext.create();
@@ -170,7 +177,7 @@ public class HC4CookieHandler implements CookieHandler {
         if (debugEnabled){
             log.debug("Found "+c.size()+" cookies for "+url.toExternalForm());
         }
-        if (c.size() <= 0) {
+        if (c.isEmpty()) {
             return null;
         }
         List<Header> lstHdr = cookieSpec.formatCookies(c);
@@ -249,5 +256,10 @@ public class HC4CookieHandler implements CookieHandler {
     @Override
     public String getDefaultPolicy() {
         return DEFAULT_POLICY_NAME; 
+    }
+
+    @Override
+    public String[] getPolicies() {
+        return AVAILABLE_POLICIES;
     }
 }

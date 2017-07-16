@@ -25,18 +25,14 @@ import java.util.Iterator;
 
 import org.apache.jmeter.protocol.http.util.ConversionUtils;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
-//NOTE: Also looked at using Java 1.4 regexp instead of ORO. The change was
-//trivial. Performance did not improve -- at least not significantly.
-//Finally decided for ORO following advise from Stefan Bodewig (message
-//to jmeter-dev dated 25 Nov 2003 8:52 CET) [Jordi]
 import org.apache.oro.text.MalformedCachePatternException;
 import org.apache.oro.text.regex.MatchResult;
 import org.apache.oro.text.regex.Pattern;
 import org.apache.oro.text.regex.PatternMatcherInput;
 import org.apache.oro.text.regex.Perl5Compiler;
 import org.apache.oro.text.regex.Perl5Matcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * HtmlParser implementation using regular expressions.
@@ -75,7 +71,7 @@ import org.apache.oro.text.regex.Perl5Matcher;
  *
  */
 class RegexpHTMLParser extends HTMLParser {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(RegexpHTMLParser.class);
 
     /**
      * Regexp fragment matching a tag attribute's value (including the equals
@@ -117,12 +113,7 @@ class RegexpHTMLParser extends HTMLParser {
      * Thread-local input:
      */
     private static final ThreadLocal<PatternMatcherInput> localInput =
-        new ThreadLocal<PatternMatcherInput>() {
-        @Override
-        protected PatternMatcherInput initialValue() {
-            return new PatternMatcherInput(new char[0]);
-        }
-    };
+            ThreadLocal.withInitial(() -> new PatternMatcherInput(new char[0]));
 
     /**
      * Make sure to compile the regular expression upon instantiation:

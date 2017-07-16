@@ -29,9 +29,12 @@ import org.apache.jmeter.exceptions.IllegalUserActionException;
 import org.apache.jmeter.gui.GuiPackage;
 import org.apache.jmeter.gui.tree.JMeterTreeNode;
 import org.apache.jmeter.testelement.TestElement;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.HeapDumper;
-import org.apache.log.Logger;
+import org.apache.jorphan.util.ThreadDumper;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.core.config.Configurator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -42,7 +45,7 @@ import org.apache.log.Logger;
  *
  */
 public class What extends AbstractAction {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(What.class);
 
     private static final Set<String> commandSet;
 
@@ -52,6 +55,7 @@ public class What extends AbstractAction {
         commands.add(ActionNames.DEBUG_ON);
         commands.add(ActionNames.DEBUG_OFF);
         commands.add(ActionNames.HEAP_DUMP);
+        commands.add(ActionNames.THREAD_DUMP);
         commandSet = Collections.unmodifiableSet(commands);
     }
 
@@ -64,17 +68,30 @@ public class What extends AbstractAction {
             String guiClassName = te.getPropertyAsString(TestElement.GUI_CLASS);
             System.out.println(te.getClass().getName());
             System.out.println(guiClassName);
-            log.info("TestElement:"+te.getClass().getName()+", guiClassName:"+guiClassName);
-        } else if (ActionNames.DEBUG_ON.equals(e.getActionCommand())){
-            LoggingManager.setPriorityFullName("DEBUG",te.getClass().getName());//$NON-NLS-1$
+            if (log.isInfoEnabled()) {
+                log.info("TestElement: {}, guiClassName: {}", te.getClass(), guiClassName);
+            }
+        } else if (ActionNames.DEBUG_ON.equals(e.getActionCommand())) {
+            final String loggerName = te.getClass().getName();
+            Configurator.setAllLevels(loggerName, Level.DEBUG);
+            log.info("Log level set to DEBUG for {}", loggerName);
         } else if (ActionNames.DEBUG_OFF.equals(e.getActionCommand())){
-            LoggingManager.setPriorityFullName("INFO",te.getClass().getName());//$NON-NLS-1$
+            final String loggerName = te.getClass().getName();
+            Configurator.setAllLevels(loggerName, Level.INFO);
+            log.info("Log level set to INFO for {}", loggerName);
         } else if (ActionNames.HEAP_DUMP.equals(e.getActionCommand())){
             try {
                 String s = HeapDumper.dumpHeap();
                 JOptionPane.showMessageDialog(null, "Created "+s, "HeapDump", JOptionPane.INFORMATION_MESSAGE);
-            } catch (Exception ex) {
+            } catch (Exception ex) { // NOSONAR We show cause in message
                 JOptionPane.showMessageDialog(null, ex.toString(), "HeapDump", JOptionPane.ERROR_MESSAGE);
+            }
+        } else if (ActionNames.THREAD_DUMP.equals(e.getActionCommand())){
+            try {
+                String s = ThreadDumper.threadDump();
+                JOptionPane.showMessageDialog(null, "Created "+s, "ThreadDump", JOptionPane.INFORMATION_MESSAGE);
+            } catch (Exception ex) { // NOSONAR We show cause in message
+                JOptionPane.showMessageDialog(null, ex.toString(), "ThreadDump", JOptionPane.ERROR_MESSAGE);
             }
         }
     }

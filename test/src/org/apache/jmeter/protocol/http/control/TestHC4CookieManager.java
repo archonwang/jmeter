@@ -114,7 +114,7 @@ public class TestHC4CookieManager extends JMeterTestCase {
         }
 
         /**
-         * @throws Exception
+         * @throws Exception when anything goes wrong in the test
          */
         @Test
         public void testAddCookieFromHeaderWithWildcard() throws Exception {
@@ -147,7 +147,7 @@ public class TestHC4CookieManager extends JMeterTestCase {
         }
 
         /**
-         * @throws Exception
+         * @throws Exception when anything goes wrong in the test
          */
         @Test
         public void testAddCookieFromHeaderWithNoWildcard() throws Exception {
@@ -175,7 +175,7 @@ public class TestHC4CookieManager extends JMeterTestCase {
         }
 
         /**
-         * @throws Exception
+         * @throws Exception  when anything goes wrong in the test
          */
         @Test
         public void testAddCookieFromHeaderWithWildcard2() throws Exception {
@@ -199,7 +199,7 @@ public class TestHC4CookieManager extends JMeterTestCase {
         }
 
         /**
-         * @throws Exception
+         * @throws Exception  when anything goes wrong in the test
          */
         @Test
         public void testBug56358() throws Exception {
@@ -288,6 +288,38 @@ public class TestHC4CookieManager extends JMeterTestCase {
             String s = man.getCookieHeaderForURL(url);
             assertNotNull(s);
             assertEquals("test=1", s);
+        }
+        
+        // Test HttpOnly cookie is parsed correctly
+        @Test
+        public void testHttpOnlyCookie() throws Exception {
+            URL url = new URL("http://a.b.c/");
+            man.addCookieFromHeader("mySASession=s%3AcafPSGf6UJguyhddGFFeLdHBy9CYbzIS.NhYyA26LGTAVoLxhCQUK%2F2Bs34MW5kGHmErKzG6r3XI; Path=/; Expires=Tue, 07 Feb 2990 09:13:14 GMT; HttpOnly", url);
+            assertEquals(1,man.getCookieCount());
+            String s = man.getCookieHeaderForURL(url);
+            assertNotNull(s);
+            assertEquals("mySASession=s%3AcafPSGf6UJguyhddGFFeLdHBy9CYbzIS.NhYyA26LGTAVoLxhCQUK%2F2Bs34MW5kGHmErKzG6r3XI", s);
+        }
+
+        // Test Secure cookie is parsed correctly and not transmitted for HTTP
+        @Test
+        public void testSecureCookieWithHttp() throws Exception {
+            URL url = new URL("http://a.b.c/");
+            man.addCookieFromHeader("mySASession=s%3AcafPSGf6UJguyhddGFFeLdHBy9CYbzIS.NhYyA26LGTAVoLxhCQUK%2F2Bs34MW5kGHmErKzG6r3XI; Path=/; Expires=Tue, 07 Feb 2990 09:13:14 GMT; HttpOnly; secure", url);
+            assertEquals(1,man.getCookieCount());
+            String s = man.getCookieHeaderForURL(url);
+            assertNull(s);
+        }
+
+        // Test Secure cookie is parsed correctly and transmitted for HTTPS
+        @Test
+        public void testSecureCookieWithHttps() throws Exception {
+            URL url = new URL("https://a.b.c/");
+            man.addCookieFromHeader("mySASession=s%3AcafPSGf6UJguyhddGFFeLdHBy9CYbzIS.NhYyA26LGTAVoLxhCQUK%2F2Bs34MW5kGHmErKzG6r3XI; Path=/; Expires=Tue, 07 Feb 2990 09:13:14 GMT; HttpOnly; secure", url);
+            assertEquals(1,man.getCookieCount());
+            String s = man.getCookieHeaderForURL(url);
+            assertNotNull(s);
+            assertEquals("mySASession=s%3AcafPSGf6UJguyhddGFFeLdHBy9CYbzIS.NhYyA26LGTAVoLxhCQUK%2F2Bs34MW5kGHmErKzG6r3XI", s);
         }
 
         // Test multi-cookie header handling
@@ -481,6 +513,7 @@ public class TestHC4CookieManager extends JMeterTestCase {
             assertEquals("test1=moo1; test2=moo2; test2=moo3", s);
         }
         
+        @SuppressWarnings("deprecation") // test of deprecated item
         @Test
         public void testCookiePolicy2109() throws Exception {
             man.setCookiePolicy(org.apache.http.client.params.CookiePolicy.RFC_2109);

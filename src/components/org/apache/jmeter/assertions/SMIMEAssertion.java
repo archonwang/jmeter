@@ -21,7 +21,6 @@ package org.apache.jmeter.assertions;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
@@ -40,11 +39,8 @@ import javax.mail.Session;
 import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 
-import org.apache.commons.io.IOUtils;
 import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -66,6 +62,8 @@ import org.bouncycastle.mail.smime.SMIMESignedParser;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.bc.BcDigestCalculatorProvider;
 import org.bouncycastle.util.Store;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Helper class which isolates the BouncyCastle code.
@@ -73,7 +71,7 @@ import org.bouncycastle.util.Store;
 class SMIMEAssertion {
 
     // Use the name of the test element, otherwise cannot enable/disable debug from the GUI
-    private static final Logger log = LoggingManager.getLoggerForShortName(SMIMEAssertionTestElement.class.getName());
+    private static final Logger log = LoggerFactory.getLogger(SMIMEAssertionTestElement.class);
 
     SMIMEAssertion() {
         super();
@@ -83,25 +81,21 @@ class SMIMEAssertion {
         checkForBouncycastle();
         AssertionResult res = new AssertionResult(name);
         try {
-            MimeMessage msg = null;
+            MimeMessage msg;
             final int msgPos = testElement.getSpecificMessagePositionAsInt();
             if (msgPos < 0){ // means counting from end
                 SampleResult[] subResults = response.getSubResults();
                 final int pos = subResults.length + msgPos;
-                if (log.isDebugEnabled()) {
-                    log.debug("Getting message number: "+pos+" of "+subResults.length);
-                }
+                log.debug("Getting message number: {} of {}", pos, subResults.length);
                 msg = getMessageFromResponse(response,pos);
             } else {
-                if (log.isDebugEnabled()) {
-                    log.debug("Getting message number: "+msgPos);
-                }
+                log.debug("Getting message number: {}", msgPos);
                 msg = getMessageFromResponse(response, msgPos);
             }
             
             SMIMESignedParser s = null;
-            if (log.isDebugEnabled()) {
-                log.debug("Content-type: "+msg.getContentType());
+            if(log.isDebugEnabled()) {
+                log.debug("Content-type: {}", msg.getContentType());
             }
             if (msg.isMimeType("multipart/signed")) { // $NON-NLS-1$
                 MimeMultipart multipart = (MimeMultipart) msg.getContent();
@@ -143,7 +137,7 @@ class SMIMEAssertion {
             res.setFailureMessage("Cannot extract signed body part from signature: "
                     + e.getMessage());
         } catch (IOException e) { // should never happen
-            log.error("Cannot read mime message content: " + e.getMessage(), e);
+            log.error("Cannot read mime message content: {}", e.getMessage(), e);
             res.setError(true);
             res.setFailureMessage(e.getMessage());
         }
@@ -176,7 +170,7 @@ class SMIMEAssertion {
                             verifier = new JcaSimpleSignerInfoVerifierBuilder().setProvider("BC")
                                     .build(cert);
                         } catch (OperatorCreationException e) {
-                            log.error("Can't create a provider", e);
+                            log.error("Can't create a provider.", e);
                         }
                         if (verifier == null || !signer.verify(verifier)) {
                             res.setFailure(true);
@@ -216,9 +210,9 @@ class SMIMEAssertion {
                         String subject = testElement.getSignerDn();
                         if (subject.length() > 0) {
                             final X500Name certPrincipal = cert.getSubject();
-                            log.debug("DN from cert: " + certPrincipal.toString());
+                            log.debug("DN from cert: {}", certPrincipal);
                             X500Name principal = new X500Name(subject);
-                            log.debug("DN from assertion: " + principal.toString());
+                            log.debug("DN from assertion: {}", principal);
                             if (!principal.equals(certPrincipal)) {
                                 res.setFailure(true);
                                 failureMessage
@@ -230,9 +224,9 @@ class SMIMEAssertion {
                         String issuer = testElement.getIssuerDn();
                         if (issuer.length() > 0) {
                             final X500Name issuerX500Name = cert.getIssuer();
-                            log.debug("IssuerDN from cert: " + issuerX500Name.toString());
+                            log.debug("IssuerDN from cert: {}", issuerX500Name);
                             X500Name principal = new X500Name(issuer);
-                            log.debug("IssuerDN from assertion: " + principal);
+                            log.debug("IssuerDN from assertion: {}", principal);
                             if (!principal.equals(issuerX500Name)) {
                                 res.setFailure(true);
                                 failureMessage
@@ -249,20 +243,23 @@ class SMIMEAssertion {
                     if (testElement.isSignerCheckByFile()) {
                         CertificateFactory cf = CertificateFactory
                                 .getInstance("X.509");
-                        X509CertificateHolder certFromFile;
-                        InputStream inStream = null;
-                        try {
-                            inStream = new BufferedInputStream(new FileInputStream(testElement.getSignerCertFile()));
-                            certFromFile = new JcaX509CertificateHolder((X509Certificate) cf.generateCertificate(inStream));
-                        } finally {
-                            IOUtils.closeQuietly(inStream);
+                        try (InputStream fis = new FileInputStream(testElement.getSignerCertFile());
+                                InputStream bis = new BufferedInputStream(fis)){
+                            X509CertificateHolder certFromFile = new JcaX509CertificateHolder((X509Certificate) cf.generateCertificate(bis));
+                            if (!certFromFile.equals(cert)) {
+                                res.setFailure(true);
+                                res.setFailureMessage("Signer certificate does not match certificate "
+                                                + testElement.getSignerCertFile());
+                            }
+                        } catch (IOException e) {
+                            if (log.isDebugEnabled()) {
+                                log.debug("Could not read cert file {}", testElement.getSignerCertFile(), e);
+                            }
+                            res.setFailure(true);
+                            res.setFailureMessage("Could not read certificate file " + testElement.getSignerCertFile());
                         }
 
-                        if (!certFromFile.equals(cert)) {
-                            res.setFailure(true);
-                            res.setFailureMessage("Signer certificate does not match certificate "
-                                            + testElement.getSignerCertFile());
-                        }
+                        
                     }
 
                 } else {
@@ -281,9 +278,6 @@ class SMIMEAssertion {
             log.error(e.getMessage(), e);
             res.setError(true);
             res.setFailureMessage(e.getMessage());
-        } catch (FileNotFoundException e) {
-            res.setFailure(true);
-            res.setFailureMessage("certificate file not found: " + e.getMessage());
         }
 
         return res;
@@ -301,14 +295,16 @@ class SMIMEAssertion {
         }
 
         final SampleResult sampleResult = subResults[messageNumber];
-        if (log.isDebugEnabled()) {
-            log.debug("Bytes: "+sampleResult.getBytesAsLong()+" CT: "+sampleResult.getContentType());
+        if(log.isDebugEnabled()) {
+            log.debug("Bytes: {}, Content Type: {}", sampleResult.getBytesAsLong(), sampleResult.getContentType());
         }
         byte[] data = sampleResult.getResponseData();
         Session session = Session.getDefaultInstance(new Properties());
         MimeMessage msg = new MimeMessage(session, new ByteArrayInputStream(data));
 
-        log.debug("msg.getSize() = " + msg.getSize());
+        if(log.isDebugEnabled()) {
+            log.debug("msg.getSize() = {}", msg.getSize());
+        }
         return msg;
     }
 
@@ -342,7 +338,9 @@ class SMIMEAssertion {
         X500Name subject = cert.getSubject();
         for (RDN emails : subject.getRDNs(BCStyle.EmailAddress)) {
             for (AttributeTypeAndValue emailAttr: emails.getTypesAndValues()) {
-                log.debug("Add email from RDN: " + IETFUtils.valueToString(emailAttr.getValue()));
+                if (log.isDebugEnabled()) {
+                    log.debug("Add email from RDN: {}", IETFUtils.valueToString(emailAttr.getValue()));
+                }
                 res.add(IETFUtils.valueToString(emailAttr.getValue()));
             }
         }
@@ -354,7 +352,7 @@ class SMIMEAssertion {
                     subjectAlternativeNames.getParsedValue()).getNames()) {
                 if (name.getTagNo() == GeneralName.rfc822Name) {
                     String email = IETFUtils.valueToString(name.getName());
-                    log.debug("Add email from subjectAlternativeName: " + email);
+                    log.debug("Add email from subjectAlternativeName: {}", email);
                     res.add(email);
                 }
             }

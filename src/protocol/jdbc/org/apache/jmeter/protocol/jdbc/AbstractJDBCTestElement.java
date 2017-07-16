@@ -19,6 +19,8 @@
 package org.apache.jmeter.protocol.jdbc;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.math.BigDecimal;
@@ -48,8 +50,8 @@ import org.apache.jmeter.testelement.AbstractTestElement;
 import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A base class for all JDBC test elements handling the basics of a SQL request.
@@ -58,7 +60,7 @@ import org.apache.log.Logger;
 public abstract class AbstractJDBCTestElement extends AbstractTestElement implements TestStateListener{
     private static final long serialVersionUID = 235L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(AbstractJDBCTestElement.class);
 
     private static final String COMMA = ","; // $NON-NLS-1$
     private static final char COMMA_CHAR = ',';
@@ -159,14 +161,11 @@ public abstract class AbstractJDBCTestElement extends AbstractTestElement implem
      * @throws UnsupportedOperationException if the user provided incorrect query type
      */
     protected byte[] execute(Connection conn, SampleResult sample) throws SQLException, IOException, UnsupportedOperationException {
-        log.debug("executing jdbc");
-        Statement stmt = null;
-
-        try {
-            // Based on query return value, get results
-            String _queryType = getQueryType();
-            if (SELECT.equals(_queryType)) {
-                stmt = conn.createStatement();
+        log.debug("executing jdbc:{}", getQuery());
+        // Based on query return value, get results
+        String _queryType = getQueryType();
+        if (SELECT.equals(_queryType)) {
+            try (Statement stmt = conn.createStatement()) {
                 stmt.setQueryTimeout(getIntegerQueryTimeout());
                 ResultSet rs = null;
                 try {
@@ -176,65 +175,64 @@ public abstract class AbstractJDBCTestElement extends AbstractTestElement implem
                 } finally {
                     close(rs);
                 }
-            } else if (CALLABLE.equals(_queryType)) {
-                try (CallableStatement cstmt = getCallableStatement(conn)) {
-                    int[] out = setArguments(cstmt);
-                    // A CallableStatement can return more than 1 ResultSets
-                    // plus a number of update counts.
-                    boolean hasResultSet = cstmt.execute();
-                    sample.latencyEnd();
-                    String sb = resultSetsToString(cstmt,hasResultSet, out);
-                    return sb.getBytes(ENCODING);
-                }
-            } else if (UPDATE.equals(_queryType)) {
-                stmt = conn.createStatement();
+            }
+        } else if (CALLABLE.equals(_queryType)) {
+            try (CallableStatement cstmt = getCallableStatement(conn)) {
+                int[] out = setArguments(cstmt);
+                // A CallableStatement can return more than 1 ResultSets
+                // plus a number of update counts.
+                boolean hasResultSet = cstmt.execute();
+                sample.latencyEnd();
+                String sb = resultSetsToString(cstmt,hasResultSet, out);
+                return sb.getBytes(ENCODING);
+            }
+        } else if (UPDATE.equals(_queryType)) {
+            try (Statement stmt = conn.createStatement()) {
                 stmt.setQueryTimeout(getIntegerQueryTimeout());
                 stmt.executeUpdate(getQuery());
                 sample.latencyEnd();
                 int updateCount = stmt.getUpdateCount();
                 String results = updateCount + " updates";
                 return results.getBytes(ENCODING);
-            } else if (PREPARED_SELECT.equals(_queryType)) {
-                try (PreparedStatement pstmt = getPreparedStatement(conn)) {
-                    setArguments(pstmt);
-                    ResultSet rs = null;
-                    try {
-                        rs = pstmt.executeQuery();
-                        sample.latencyEnd();
-                        return getStringFromResultSet(rs).getBytes(ENCODING);
-                    } finally {
-                        close(rs);
-                    }
-                }
-            } else if (PREPARED_UPDATE.equals(_queryType)) {
-                try (PreparedStatement pstmt = getPreparedStatement(conn)) {
-                    setArguments(pstmt);
-                    pstmt.executeUpdate();
-                    sample.latencyEnd();
-                    String sb = resultSetsToString(pstmt,false,null);
-                    return sb.getBytes(ENCODING);
-                }
-            } else if (ROLLBACK.equals(_queryType)){
-                conn.rollback();
-                sample.latencyEnd();
-                return ROLLBACK.getBytes(ENCODING);
-            } else if (COMMIT.equals(_queryType)){
-                conn.commit();
-                sample.latencyEnd();
-                return COMMIT.getBytes(ENCODING);
-            } else if (AUTOCOMMIT_FALSE.equals(_queryType)){
-                conn.setAutoCommit(false);
-                sample.latencyEnd();
-                return AUTOCOMMIT_FALSE.getBytes(ENCODING);
-            } else if (AUTOCOMMIT_TRUE.equals(_queryType)){
-                conn.setAutoCommit(true);
-                sample.latencyEnd();
-                return AUTOCOMMIT_TRUE.getBytes(ENCODING);
-            } else { // User provided incorrect query type
-                throw new UnsupportedOperationException("Unexpected query type: "+_queryType);
             }
-        } finally {
-            close(stmt);
+        } else if (PREPARED_SELECT.equals(_queryType)) {
+            try (PreparedStatement pstmt = getPreparedStatement(conn)) {
+                setArguments(pstmt);
+                ResultSet rs = null;
+                try {
+                    rs = pstmt.executeQuery();
+                    sample.latencyEnd();
+                    return getStringFromResultSet(rs).getBytes(ENCODING);
+                } finally {
+                    close(rs);
+                }
+            }
+        } else if (PREPARED_UPDATE.equals(_queryType)) {
+            try (PreparedStatement pstmt = getPreparedStatement(conn)) {
+                setArguments(pstmt);
+                pstmt.executeUpdate();
+                sample.latencyEnd();
+                String sb = resultSetsToString(pstmt,false,null);
+                return sb.getBytes(ENCODING);
+            }
+        } else if (ROLLBACK.equals(_queryType)){
+            conn.rollback();
+            sample.latencyEnd();
+            return ROLLBACK.getBytes(ENCODING);
+        } else if (COMMIT.equals(_queryType)){
+            conn.commit();
+            sample.latencyEnd();
+            return COMMIT.getBytes(ENCODING);
+        } else if (AUTOCOMMIT_FALSE.equals(_queryType)){
+            conn.setAutoCommit(false);
+            sample.latencyEnd();
+            return AUTOCOMMIT_FALSE.getBytes(ENCODING);
+        } else if (AUTOCOMMIT_TRUE.equals(_queryType)){
+            conn.setAutoCommit(true);
+            sample.latencyEnd();
+            return AUTOCOMMIT_TRUE.getBytes(ENCODING);
+        } else { // User provided incorrect query type
+            throw new UnsupportedOperationException("Unexpected query type: "+_queryType);
         }
     }
 
@@ -319,16 +317,19 @@ public abstract class AbstractJDBCTestElement extends AbstractTestElement implem
             final Clob clob) throws SQLException {
         try {
             if (clob.length() > MAX_RETAIN_SIZE) {
-                jmvars.put(
-                        name,
-                        IOUtils.toString(clob.getCharacterStream(0,
-                                MAX_RETAIN_SIZE))
-                                + "<result cut off, it is too big>");
+                try (Reader reader = clob.getCharacterStream(0,MAX_RETAIN_SIZE)) {
+                    jmvars.put(
+                            name,
+                            IOUtils.toString(reader)
+                            + "<result cut off, it is too big>");
+                }
             } else {
-                jmvars.put(name, IOUtils.toString(clob.getCharacterStream()));
+                try (Reader reader = clob.getCharacterStream()) {
+                    jmvars.put(name, IOUtils.toString(reader));
+                }
             }
         } catch (IOException e) {
-            log.warn("Could not read CLOB into " + name, e);
+            log.warn("Could not read CLOB into {}", name, e);
         }
     }
 
@@ -340,17 +341,18 @@ public abstract class AbstractJDBCTestElement extends AbstractTestElement implem
                 jmvars.putObject(name,
                         IOUtils.toByteArray(blob.getBinaryStream(0, length)));
             } catch (IOException e) {
-                log.warn("Could not read BLOB into " + name + " as object.", e);
+                log.warn("Could not read BLOB into {} as object.", name, e);
             }
         } else if (RS_COUNT_RECORDS.equals(resultSetHandler)) {
             jmvars.put(name, blob.length() + " bytes");
         } else {
             try {
                 long length = Math.max(blob.length(), MAX_RETAIN_SIZE);
-                jmvars.put(name, IOUtils.toString(
-                        blob.getBinaryStream(0, length), ENCODING));
+                try (InputStream is = blob.getBinaryStream(0, length)) {
+                    jmvars.put(name, IOUtils.toString(is, ENCODING));
+                }
             } catch (IOException e) {
-                log.warn("Can't convert BLOB to String using " + ENCODING, e);
+                log.warn("Can't convert BLOB to String using {}", ENCODING, e);
             }
         }
     }
@@ -488,9 +490,9 @@ public abstract class AbstractJDBCTestElement extends AbstractTestElement implem
     private PreparedStatement getPreparedStatement(Connection conn, boolean callable) throws SQLException {
         PreparedStatement pstmt;
         if (callable) {
-            pstmt = conn.prepareCall(getQuery());
+            pstmt = conn.prepareCall(getQuery()); // NOSONAR closed by caller
         } else {
-            pstmt = conn.prepareStatement(getQuery());
+            pstmt = conn.prepareStatement(getQuery()); // NOSONAR closed by caller
         }
         pstmt.setQueryTimeout(getIntegerQueryTimeout());
         return pstmt;
@@ -595,7 +597,7 @@ public abstract class AbstractJDBCTestElement extends AbstractTestElement implem
                 s.close();
             }
         } catch (SQLException e) {
-            log.warn("Error closing Statement " + s.toString(), e);
+            log.warn("Error closing Statement {}", s.toString(), e);
         }
     }
 

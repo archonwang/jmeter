@@ -25,16 +25,18 @@ import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testbeans.TestBean;
 import org.apache.jmeter.util.BeanShellInterpreter;
 import org.apache.jmeter.util.BeanShellTestElement;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JMeterException;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/**
+ * We must implement Visualizer so that TestBeanGUI can find the correct GUI class
+ *
+ */
 public class BeanShellListener extends BeanShellTestElement
     implements Cloneable, SampleListener, TestBean, Visualizer, UnsharedComponent  {
-    // N.B. Needs to implement Visualizer so that TestBeanGUI can find the correct GUI class
-    // TODO - remove UnsharedComponent ? Probably does not make sense for a TestBean.
-
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    
+    private static final Logger log = LoggerFactory.getLogger(BeanShellListener.class);
 
     private static final long serialVersionUID = 4;
 
@@ -60,7 +62,9 @@ public class BeanShellListener extends BeanShellTestElement
             bshInterpreter.set("sampleResult", samp);//$NON-NLS-1$
             processFileOrScript(bshInterpreter);
         } catch (JMeterException e) {
-            log.warn("Problem in BeanShell script "+e);
+            if (log.isWarnEnabled()) {
+                log.warn("Problem in BeanShell script. {}", e.toString());
+            }
         }
     }
 
@@ -84,4 +88,8 @@ public class BeanShellListener extends BeanShellTestElement
         return false;
     }
 
+    @Override
+    public Object clone() {
+        return super.clone();
+    }
 }

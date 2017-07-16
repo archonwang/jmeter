@@ -37,6 +37,9 @@ import javax.swing.SwingUtilities;
 import org.apache.jmeter.engine.util.ValueReplacer;
 import org.apache.jmeter.exceptions.IllegalUserActionException;
 import org.apache.jmeter.gui.UndoHistory.HistoryListener;
+import org.apache.jmeter.gui.action.TreeNodeNamingPolicy;
+import org.apache.jmeter.gui.action.impl.DefaultTreeNodeNamingPolicy;
+import org.apache.jmeter.gui.logging.GuiLogEventBus;
 import org.apache.jmeter.gui.tree.JMeterTreeListener;
 import org.apache.jmeter.gui.tree.JMeterTreeModel;
 import org.apache.jmeter.gui.tree.JMeterTreeNode;
@@ -53,8 +56,8 @@ import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.util.LocaleChangeEvent;
 import org.apache.jmeter.util.LocaleChangeListener;
 import org.apache.jorphan.collections.HashTree;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * GuiPackage is a static class that provides convenient access to information
@@ -67,7 +70,7 @@ import org.apache.log.Logger;
  */
 public final class GuiPackage implements LocaleChangeListener, HistoryListener {
     /** Logging. */
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(GuiPackage.class);
 
     /** Singleton instance. */
     private static GuiPackage guiPack;
@@ -129,12 +132,17 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
     private UndoHistory undoHistory = new UndoHistory();
 
     /**
+     * GUI Logging Event Bus.
+     */
+    private GuiLogEventBus logEventBus = new GuiLogEventBus();
+
+    /**
      * Private constructor to permit instantiation only from within this class.
      * Use {@link #getInstance()} to retrieve a singleton instance.
      */
     private GuiPackage(JMeterTreeModel treeModel, JMeterTreeListener treeListener) {
         this.treeModel = treeModel;
-        if(undoHistory.isEnabled()) {
+        if(UndoHistory.isEnabled()) {
             this.treeModel.addTreeModelListener(undoHistory);
         }
         this.treeListener = treeListener;
@@ -155,7 +163,7 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
      * - Locale Changes
      */
     public void registerAsListener() {
-        if(undoHistory.isEnabled()) {
+        if(UndoHistory.isEnabled()) {
             this.undoHistory.registerHistoryListener(this);
         }
         JMeterUtils.addLocaleChangeListener(this);
@@ -175,27 +183,7 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
         guiPack.undoHistory.add(treeModel, "Created");
         GuiPackage.guiPack = guiPack;
     }
-    
-    /**
-     * When GuiPackage is requested for the first time, it should be given
-     * handles to JMeter's Tree Listener and TreeModel.
-     *
-     * @param listener
-     *            the TreeListener for JMeter's test tree
-     * @param treeModel
-     *            the model for JMeter's test tree
-     *
-     * @return GuiPackage
-     * @deprecated  Will be removed in next version. Use {@link GuiPackage#initInstance(JMeterTreeListener, JMeterTreeModel)}
-     */
-    @Deprecated
-    public static GuiPackage getInstance(JMeterTreeListener listener, JMeterTreeModel treeModel) {
-        if(guiPack == null) {
-            initInstance(listener, treeModel);
-        }
-        return GuiPackage.guiPack;
-    }
-    
+   
 
     /**
      * Get a JMeterGUIComponent for the specified test element. If the GUI has
@@ -286,6 +274,10 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
             updateCurrentNode();
             TestElement curNode = treeListener.getCurrentNode().getTestElement();
             JMeterGUIComponent comp = getGui(curNode);
+            if (comp == null) {
+                log.debug("No Component found for {}.", treeListener.getCurrentNode().getName());
+                return null;
+            }
             comp.clearGui();
             log.debug("Updating gui to new node");
             comp.configure(curNode);
@@ -416,13 +408,25 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
     /**
      * Update the GUI for the currently selected node. The GUI component is
      * configured to reflect the settings in the current tree node.
-     *
      */
     public void updateCurrentGui() {
         updateCurrentNode();
+        refreshCurrentGui();
+    }
+
+    /**
+     * Refresh GUI from node state. 
+     * This method does not update the current node from GUI at the 
+     * difference of {@link GuiPackage#updateCurrentGui()}
+     */
+    public void refreshCurrentGui() {
         currentNode = treeListener.getCurrentNode();
         TestElement element = currentNode.getTestElement();
         JMeterGUIComponent comp = getGui(element);
+        if (comp == null) {
+            log.debug("No component found for {}", currentNode.getName());
+            return;
+        }
         comp.configure(element);
         currentNodeUpdated = false;
     }
@@ -438,10 +442,14 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
             if (currentNode != null && !currentNodeUpdated) {
                 log.debug("Updating current node " + currentNode.getName());
                 JMeterGUIComponent comp = getGui(currentNode.getTestElement());
+                if (comp == null) {
+                    log.debug("No component found for {}", currentNode.getName());
+                    return;
+                }
                 TestElement el = currentNode.getTestElement();
                 int before = 0;
                 int after = 0;
-                final boolean historyEnabled = undoHistory.isEnabled();
+                final boolean historyEnabled = UndoHistory.isEnabled();
                 if(historyEnabled) {
                     before = getTestElementCheckSum(el);
                 }
@@ -633,7 +641,7 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
      */
     @Override
     public void localeChanged(LocaleChangeEvent event) {
-        // FIrst make sure we save the content of the current GUI (since we
+        // First make sure we save the content of the current GUI (since we
         // will flush it away):
         updateCurrentNode();
 
@@ -664,6 +672,8 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
     private String testPlanFile;
 
     private final List<Stoppable> stoppables = Collections.synchronizedList(new ArrayList<Stoppable>());
+
+    private TreeNodeNamingPolicy namingPolicy;
 
     /**
      * Sets the filepath of the current test plan. It's shown in the main frame
@@ -730,12 +740,7 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
         if (guiPack == null) {
             return ;
         }
-        SwingUtilities.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                JOptionPane.showMessageDialog(null,message,title,type);
-            }
-        });
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(null,message,title,type));
 
     }
 
@@ -868,4 +873,32 @@ public final class GuiPackage implements LocaleChangeListener, HistoryListener {
         ((JMeterToolBar)toolbar).updateUndoRedoIcons(history.canUndo(), history.canRedo());
     }
 
+    /**
+     * @return {@link TreeNodeNamingPolicy}
+     */
+    public TreeNodeNamingPolicy getNamingPolicy() {
+        if(namingPolicy == null) {
+            final String namingPolicyImplementation = 
+                    JMeterUtils.getPropDefault("naming_policy.impl", //$NON-NLS-1$ 
+                            DefaultTreeNodeNamingPolicy.class.getName());
+
+            try {
+                Class<?> implementationClass = Class.forName(namingPolicyImplementation);
+                this.namingPolicy = (TreeNodeNamingPolicy) implementationClass.newInstance();
+                
+            } catch (Exception ex) {
+                log.error("Failed to create configured naming policy:"+namingPolicyImplementation+", will use default one", ex);
+                this.namingPolicy = new DefaultTreeNodeNamingPolicy();
+            }
+        }
+        return namingPolicy;
+    }
+
+    /**
+     * Return {@link GuiLogEventBus}.
+     * @return {@link GuiLogEventBus}
+     */
+    public GuiLogEventBus getLogEventBus() {
+        return logEventBus;
+    }
 }

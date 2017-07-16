@@ -27,12 +27,12 @@ import java.util.Properties;
 import javax.swing.JOptionPane;
 
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Colors {
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Colors.class);
 
     private static final String ENTRY_SEP = ",";  //$NON-NLS-1$
 
@@ -44,6 +44,7 @@ public class Colors {
     
     private static final String COLORS_ORDER = "jmeter.order";
     
+    public static final Color LIGHT_RED = new Color(0xFF, 0x80, 0x80);
     /**
      * Parse icon set file.
      * @return List of icons/action definition
@@ -87,7 +88,7 @@ public class Colors {
                 Color itb = new Color(Integer.parseInt(lcol[0]), Integer.parseInt(lcol[1]), Integer.parseInt(lcol[2]));
                 listColors.add(itb);
             } catch (java.lang.Exception e) {
-                log.warn("Error in colors.properties, current property=" + property); // $NON-NLS-1$
+                log.warn("Error in colors.properties, current property={}", property); // $NON-NLS-1$
             }
         }
         return listColors;

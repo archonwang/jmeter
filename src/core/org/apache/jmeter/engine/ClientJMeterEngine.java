@@ -31,14 +31,14 @@ import org.apache.jmeter.services.FileServer;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.collections.HashTree;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Class to run remote tests from the client JMeter and collect remote samples
  */
 public class ClientJMeterEngine implements JMeterEngine {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(ClientJMeterEngine.class);
 
     private static final Object LOCK = new Object();
 
@@ -112,7 +112,9 @@ public class ClientJMeterEngine implements JMeterEngine {
         HashTree testTree = test;
 
         synchronized(testTree) {
-            testTree.traverse(new PreCompiler(true));  // limit the changes to client only test elements
+            PreCompiler compiler = new PreCompiler(true);
+            testTree.traverse(compiler);  // limit the changes to client only test elements
+            JMeterContextService.initClientSideVariables(compiler.getClientSideVariables());
             testTree.traverse(new TurnElementsOn());
             testTree.traverse(new ConvertListeners());
         }
@@ -129,7 +131,7 @@ public class ClientJMeterEngine implements JMeterEngine {
             String scriptName = FileServer.getFileServer().getScriptName();
             synchronized(LOCK)
             {
-                methodName="rconfigure()";
+                methodName="rconfigure()"; // NOSONAR Used for tracing
                 remote.rconfigure(testTree, host, baseDirRelative, scriptName);
             }
             log.info("sent test to " + host + " basedir='"+baseDirRelative+"'"); // $NON-NLS-1$
@@ -138,7 +140,7 @@ public class ClientJMeterEngine implements JMeterEngine {
             }
             log.info("Sending properties "+savep);
             try {
-                methodName="rsetProperties()";
+                methodName="rsetProperties()";// NOSONAR Used for tracing
                 remote.rsetProperties(savep);
             } catch (RemoteException e) {
                 log.warn("Could not set properties: " + e.toString());
@@ -159,7 +161,7 @@ public class ClientJMeterEngine implements JMeterEngine {
 
     /**
      * Tidy up RMI access to allow JMeter client to exit.
-     * Currently just interrups the "RMI Reaper" thread.
+     * Currently just interrupts the "RMI Reaper" thread.
      * @param logger where to log the information
      */
     public static void tidyRMI(Logger logger) {
@@ -167,7 +169,7 @@ public class ClientJMeterEngine implements JMeterEngine {
         for(Thread t : Thread.getAllStackTraces().keySet()){
             String name = t.getName();
             if (name.matches(reaperRE)) {
-                logger.info("Interrupting "+name);
+                logger.info("Interrupting {}", name);
                 t.interrupt();
             }
         }
@@ -177,7 +179,7 @@ public class ClientJMeterEngine implements JMeterEngine {
     // Called by JMeter ListenToTest if remoteStop is true
     @Override
     public void exit() {
-        log.info("about to exit remote server on "+host);
+        log.info("about to exit remote server on {}", host);
         try {
             remote.rexit();
         } catch (RemoteException e) {
@@ -186,6 +188,7 @@ public class ClientJMeterEngine implements JMeterEngine {
     }
 
     private Properties savep;
+    
     /** {@inheritDoc} */
     @Override
     public void setProperties(Properties p) {

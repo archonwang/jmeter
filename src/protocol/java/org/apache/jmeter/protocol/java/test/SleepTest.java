@@ -27,8 +27,8 @@ import org.apache.jmeter.protocol.java.sampler.JavaSamplerContext;
 import org.apache.jmeter.samplers.Interruptible;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.TestElement;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The <code>SleepTest</code> class is a simple example class for a JMeter
@@ -46,11 +46,10 @@ import org.apache.log.Logger;
  * Thus, the SleepMask provides a way to add a random component to the sleep
  * time.
  *
- * @version $Revision$
  */
 public class SleepTest extends AbstractJavaSamplerClient implements Serializable, Interruptible {
 
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger LOG = LoggerFactory.getLogger(JavaTest.class);
 
     private static final long serialVersionUID = 240L;
 
@@ -78,7 +77,7 @@ public class SleepTest extends AbstractJavaSamplerClient implements Serializable
     // The name of the sampler
     private String name;
 
-    private volatile Thread myThread;
+    private transient volatile Thread myThread;
 
     /**
      * Default constructor for <code>SleepTest</code>.
@@ -162,6 +161,7 @@ public class SleepTest extends AbstractJavaSamplerClient implements Serializable
             LOG.warn("SleepTest: interrupted.");
             results.setSuccessful(false);
             results.setResponseMessage(e.toString());
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             LOG.error("SleepTest: error during sample", e);
             results.setSuccessful(false);
@@ -207,8 +207,8 @@ public class SleepTest extends AbstractJavaSamplerClient implements Serializable
     private void listParameters(JavaSamplerContext context) {
         Iterator<String> argsIt = context.getParameterNamesIterator();
         while (argsIt.hasNext()) {
-            String name = argsIt.next();
-            LOG.debug(name + "=" + context.getParameter(name));
+            String lName = argsIt.next();
+            LOG.debug(lName + "=" + context.getParameter(lName));
         }
     }
 

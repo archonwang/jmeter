@@ -35,7 +35,7 @@ import org.apache.jorphan.collections.HashTree;
 
 public class RemoteStart extends AbstractAction {
 
-    private static final String LOCAL_HOST = "127.0.0.1"; // $NON-NLS-1$
+    private static final String LOCAL_HOST = "127.0.0.1"; // NOSONAR $NON-NLS-1$
 
     private static final String REMOTE_HOSTS = "remote_hosts"; // $NON-NLS-1$ jmeter.properties
 
@@ -74,12 +74,18 @@ public class RemoteStart extends AbstractAction {
             distributedRunner.shutdown(Arrays.asList(name));
         } else if (action.equals(ActionNames.REMOTE_START)) {
             popupShouldSave(e);
-            distributedRunner.init(Arrays.asList(name), getTestTree());
-            distributedRunner.start(Arrays.asList(name));
+            HashTree testTree = getTestTree();
+            if ( popupCheckExistingFileListener(testTree) ) {
+                distributedRunner.init(Arrays.asList(name), testTree);
+                distributedRunner.start(Arrays.asList(name));
+            }
         } else if (action.equals(ActionNames.REMOTE_START_ALL)) {
             popupShouldSave(e);
-            distributedRunner.init(getRemoteHosts(), getTestTree());
-            distributedRunner.start();
+            HashTree testTree = getTestTree();
+            if ( popupCheckExistingFileListener(testTree) ) {
+                distributedRunner.init(getRemoteHosts(), testTree);
+                distributedRunner.start();
+            }
         } else if (action.equals(ActionNames.REMOTE_STOP_ALL)) {
             distributedRunner.stop(getRemoteHosts());
         } else if (action.equals(ActionNames.REMOTE_SHUT_ALL)) {

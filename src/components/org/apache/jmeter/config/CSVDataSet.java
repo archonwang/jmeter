@@ -24,6 +24,7 @@ import java.beans.Introspector;
 import java.io.IOException;
 import java.util.ResourceBundle;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.engine.event.LoopIterationEvent;
 import org.apache.jmeter.engine.event.LoopIterationListener;
 import org.apache.jmeter.engine.util.NoConfigMerge;
@@ -36,10 +37,10 @@ import org.apache.jmeter.testelement.property.StringProperty;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JMeterStopThreadException;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Read lines from a file and split int variables.
@@ -68,9 +69,9 @@ import org.apache.log.Logger;
  */
 public class CSVDataSet extends ConfigTestElement 
     implements TestBean, LoopIterationListener, NoConfigMerge {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(CSVDataSet.class);
 
-    private static final long serialVersionUID = 232L;
+    private static final long serialVersionUID = 233L;
 
     private static final String EOFVALUE = // value to return at EOF
         JMeterUtils.getPropDefault("csvdataset.eofstring", "<EOF>"); //$NON-NLS-1$ //$NON-NLS-2$
@@ -97,6 +98,8 @@ public class CSVDataSet extends ConfigTestElement
     
     private boolean firstLineIsNames = false;
 
+    private boolean ignoreFirstLine = false;
+
     private Object readResolve(){
         recycle = true;
         return this;
@@ -117,16 +120,16 @@ public class CSVDataSet extends ConfigTestElement
     public void setProperty(JMeterProperty property) {
         if (property instanceof StringProperty) {
             final String propName = property.getName();
-            if (propName.equals("shareMode")) { // The original name of the property
+            if ("shareMode".equals(propName)) { // The original name of the property
                 final String propValue = property.getStringValue();
                 if (propValue.contains(" ")){ // variables are unlikely to contain spaces, so most likely a translation
                     try {
                         final BeanInfo beanInfo = Introspector.getBeanInfo(this.getClass());
                         final ResourceBundle rb = (ResourceBundle) beanInfo.getBeanDescriptor().getValue(GenericTestBeanCustomizer.RESOURCE_BUNDLE);
-                        for(String resKey : CSVDataSetBeanInfo.SHARE_TAGS) {
+                        for(String resKey : CSVDataSetBeanInfo.getShareTags()) {
                             if (propValue.equals(rb.getString(resKey))) {
                                 if (log.isDebugEnabled()) {
-                                    log.debug("Converted " + propName + "=" + propValue + " to " + resKey  + " using Locale: " + rb.getLocale());
+                                    log.debug("Converted {}={} to {} using Locale: {}", propName, propValue, resKey, rb.getLocale());
                                 }
                                 ((StringProperty) property).setValue(resKey); // reset the value
                                 super.setProperty(property);
@@ -134,7 +137,7 @@ public class CSVDataSet extends ConfigTestElement
                             }
                         }
                         // This could perhaps be a variable name
-                        log.warn("Could not translate " + propName + "=" + propValue + " using Locale: " + rb.getLocale());
+                        log.warn("Could not translate {}={} using Locale: {}", propName, propValue, rb.getLocale());
                     } catch (IntrospectionException e) {
                         log.error("Could not find BeanInfo; cannot translate shareMode entries", e);
                     }
@@ -149,41 +152,41 @@ public class CSVDataSet extends ConfigTestElement
         FileServer server = FileServer.getFileServer();
         final JMeterContext context = getThreadContext();
         String delim = getDelimiter();
-        if (delim.equals("\\t")) { // $NON-NLS-1$
+        if ("\\t".equals(delim)) { // $NON-NLS-1$
             delim = "\t";// Make it easier to enter a Tab // $NON-NLS-1$
         } else if (delim.isEmpty()){
-            log.warn("Empty delimiter converted to ','");
+            log.debug("Empty delimiter, will use ','");
             delim=",";
         }
         if (vars == null) {
-            String _fileName = getFilename().trim();
+            String fileName = getFilename().trim();
             String mode = getShareMode();
             int modeInt = CSVDataSetBeanInfo.getShareModeAsInt(mode);
             switch(modeInt){
                 case CSVDataSetBeanInfo.SHARE_ALL:
-                    alias = _fileName;
+                    alias = fileName;
                     break;
                 case CSVDataSetBeanInfo.SHARE_GROUP:
-                    alias = _fileName+"@"+System.identityHashCode(context.getThreadGroup());
+                    alias = fileName+"@"+System.identityHashCode(context.getThreadGroup());
                     break;
                 case CSVDataSetBeanInfo.SHARE_THREAD:
-                    alias = _fileName+"@"+System.identityHashCode(context.getThread());
+                    alias = fileName+"@"+System.identityHashCode(context.getThread());
                     break;
                 default:
-                    alias = _fileName+"@"+mode; // user-specified key
+                    alias = fileName+"@"+mode; // user-specified key
                     break;
             }
             final String names = getVariableNames();
-            if (names == null || names.length()==0) {
-                String header = server.reserveFile(_fileName, getFileEncoding(), alias, true);
+            if (StringUtils.isEmpty(names)) {
+                String header = server.reserveFile(fileName, getFileEncoding(), alias, true);
                 try {
                     vars = CSVSaveService.csvSplitString(header, delim.charAt(0));
                     firstLineIsNames = true;
                 } catch (IOException e) {
-                    throw new IllegalArgumentException("Could not split CSV header line from file:" + _fileName,e);
+                    throw new IllegalArgumentException("Could not split CSV header line from file:" + fileName,e);
                 }
             } else {
-                server.reserveFile(_fileName, getFileEncoding(), alias);
+                server.reserveFile(fileName, getFileEncoding(), alias, ignoreFirstLine);
                 vars = JOrphanUtils.split(names, ","); // $NON-NLS-1$
             }
             trimVarNames(vars);
@@ -194,9 +197,11 @@ public class CSVDataSet extends ConfigTestElement
         String[] lineValues = {};
         try {
             if (getQuotedData()) {
-                lineValues = server.getParsedLine(alias, recycle, firstLineIsNames, delim.charAt(0));
+                lineValues = server.getParsedLine(alias, recycle, 
+                        firstLineIsNames || ignoreFirstLine, delim.charAt(0));
             } else {
-                String line = server.readLine(alias, recycle, firstLineIsNames);
+                String line = server.readLine(alias, recycle, 
+                        firstLineIsNames || ignoreFirstLine);
                 lineValues = JOrphanUtils.split(line, delim, false);
             }
             for (int a = 0; a < vars.length && a < lineValues.length; a++) {
@@ -309,5 +314,19 @@ public class CSVDataSet extends ConfigTestElement
 
     public void setShareMode(String value) {
         this.shareMode = value;
+    }
+
+    /**
+     * @return the ignoreFirstLine
+     */
+    public boolean isIgnoreFirstLine() {
+        return ignoreFirstLine;
+    }
+
+    /**
+     * @param ignoreFirstLine the ignoreFirstLine to set
+     */
+    public void setIgnoreFirstLine(boolean ignoreFirstLine) {
+        this.ignoreFirstLine = ignoreFirstLine;
     }
 }

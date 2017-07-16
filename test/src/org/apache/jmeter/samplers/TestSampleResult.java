@@ -20,18 +20,14 @@ package org.apache.jmeter.samplers;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
-import java.io.StringWriter;
-
 import org.apache.jmeter.junit.JMeterTestCase;
 import org.apache.jmeter.util.Calculator;
-import org.apache.log.LogTarget;
-import org.apache.log.format.Formatter;
-import org.apache.log.format.RawFormatter;
-import org.apache.log.output.io.WriterTarget;
+import org.apache.jmeter.util.LogRecordingDelegatingLogger;
 import org.junit.Test;
 
 // TODO need more tests - particularly for the new functions
@@ -71,19 +67,17 @@ public class TestSampleResult {
             SampleResult res = new SampleResult(false);
             // Check sample increments OK
             res.sampleStart();
-            Thread.sleep(100);
+            long totalSampleTime = sleep(100); // accumulate the time spent 'sampling'
             res.samplePause();
 
-            Thread.sleep(200);
+            Thread.sleep(200); // This should be ignored 
 
             // Re-increment
             res.sampleResume();
-            Thread.sleep(100);
+            totalSampleTime += sleep(100);
             res.sampleEnd();
             long sampleTime = res.getTime();
-            if ((sampleTime < 180) || (sampleTime > 290)) {
-                fail("Accumulated time (" + sampleTime + ") was not between 180 and 290 ms");
-            }
+            assertEquals("Accumulated sample time", totalSampleTime, sampleTime, 50);
         }
 
         @Test
@@ -91,29 +85,29 @@ public class TestSampleResult {
             SampleResult res = new SampleResult(true);
             // Check sample increments OK
             res.sampleStart();
-            Thread.sleep(100);
+            long totalSampleTime = sleep(100); // accumulate the time spent 'sampling'
             res.samplePause();
 
-            Thread.sleep(200);
+            Thread.sleep(200); // this should be ignored
 
             // Re-increment
             res.sampleResume();
-            Thread.sleep(100);
+            totalSampleTime += sleep(100);
             res.sampleEnd();
             long sampleTime = res.getTime();
-            if ((sampleTime < 180) || (sampleTime > 290)) {
-                fail("Accumulated time (" + sampleTime + ") was not between 180 and 290 ms");
-            }
+            assertEquals("Accumulated sample time", totalSampleTime, sampleTime, 50);
         }
 
-        private static final Formatter fmt = new RawFormatter();
-
-        private StringWriter wr = null;
+        private LogRecordingDelegatingLogger recordLogger;
 
         private void divertLog() {// N.B. This needs to divert the log for SampleResult
-            wr = new StringWriter(1000);
-            LogTarget[] lt = { new WriterTarget(wr, fmt) };
-            SampleResult.log.setLogTargets(lt);
+            if (SampleResult.log instanceof LogRecordingDelegatingLogger) {
+                recordLogger = (LogRecordingDelegatingLogger) SampleResult.log;
+            } else {
+                recordLogger = new LogRecordingDelegatingLogger(SampleResult.log);
+                SampleResult.log = recordLogger;
+            }
+            recordLogger.clearLogRecords();
         }
 
         @Test
@@ -122,9 +116,9 @@ public class TestSampleResult {
             SampleResult res = new SampleResult(true);
             res.sampleStart();
             res.samplePause();
-            assertEquals(0, wr.toString().length());
+            assertEquals(0, recordLogger.getLogRecordCount());
             res.samplePause();
-            assertFalse(wr.toString().length() == 0);
+            assertNotEquals(0, recordLogger.getLogRecordCount());
         }
 
         @Test
@@ -133,9 +127,9 @@ public class TestSampleResult {
             SampleResult res = new SampleResult(false);
             res.sampleStart();
             res.samplePause();
-            assertEquals(0, wr.toString().length());
+            assertEquals(0, recordLogger.getLogRecordCount());
             res.samplePause();
-            assertFalse(wr.toString().length() == 0);
+            assertNotEquals(0, recordLogger.getLogRecordCount());
         }
         
         @Test
@@ -342,6 +336,14 @@ public class TestSampleResult {
             assertEquals("aBCd",res.getDataEncodingWithDefault());
             assertEquals("aBCd",res.getDataEncodingNoDefault());
             assertEquals("text",res.getDataType());         
+        }
+
+        // sleep and return how long we actually slept
+        // may be rather longer if the system is busy
+        private long sleep(long ms) throws InterruptedException {
+            long start = System.currentTimeMillis();
+            Thread.sleep(ms);
+            return System.currentTimeMillis() - start;
         }
 }
 

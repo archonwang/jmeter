@@ -26,15 +26,16 @@ import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.jmeter.engine.util.CompoundVariable;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
+import org.slf4j.LoggerFactory;
 import org.apache.jorphan.util.JMeterStopThreadException;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
 
 /**
  * StringFromFile Function to read a String from a text file.
@@ -64,7 +65,7 @@ import org.apache.log.Logger;
  * @since 1.9
  */
 public class StringFromFile extends AbstractFunction implements TestStateListener {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(StringFromFile.class);
 
     // Only modified by static block so no need to synchronize subsequent read-only access
     private static final List<String> desc = new LinkedList<>();
@@ -94,6 +95,9 @@ public class StringFromFile extends AbstractFunction implements TestStateListene
 
     // @GuardedBy("this")
     private Object[] values;
+
+    // @GuardedBy("this")
+    private FileReader myFileReader = null; // File reader
 
     // @GuardedBy("this")
     private BufferedReader myBread = null; // Buffered reader
@@ -130,6 +134,12 @@ public class StringFromFile extends AbstractFunction implements TestStateListene
         log.info(tn + " closing file " + fileName);//$NON-NLS-1$
         try {
             myBread.close();
+        } catch (IOException e) {
+            log.error("closeFile() error: " + e.toString(), e);//$NON-NLS-1$
+        }
+        
+        try {
+            myFileReader.close();
         } catch (IOException e) {
             log.error("closeFile() error: " + e.toString(), e);//$NON-NLS-1$
         }
@@ -198,10 +208,14 @@ public class StringFromFile extends AbstractFunction implements TestStateListene
 
         log.info(tn + " opening file " + fileName);//$NON-NLS-1$
         try {
-            myBread = new BufferedReader(new FileReader(fileName));
+            myFileReader = new FileReader(fileName);
+            myBread = new BufferedReader(myFileReader);
         } catch (Exception e) {
             log.error("openFile() error: " + e.toString());//$NON-NLS-1$
+            IOUtils.closeQuietly(myFileReader);
+            IOUtils.closeQuietly(myBread);
             myBread = null;
+            myFileReader = null;
         }
     }
 

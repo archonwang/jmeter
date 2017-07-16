@@ -30,9 +30,8 @@ import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.jorphan.util.JMeterStopThreadException;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * FileToString Function to read a complete file into a String.
@@ -49,7 +48,7 @@ import org.apache.log.Logger;
  * @since 2.4
  */
 public class FileToString extends AbstractFunction {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(FileToString.class);
 
     private static final List<String> desc = new LinkedList<>();
 
@@ -86,7 +85,7 @@ public class FileToString extends AbstractFunction {
         String encoding = null;//means platform default
         if (values.length >= ENCODING) {
             encoding = ((CompoundVariable) values[ENCODING - 1]).execute().trim();
-            if (encoding.length() <= 0) { // empty encoding, return to platorm default
+            if (encoding.length() <= 0) { // empty encoding, return to platform default
                 encoding = null;
             }
         }
@@ -99,10 +98,14 @@ public class FileToString extends AbstractFunction {
         String myValue = ERR_IND;
 
         try {
-            myValue = FileUtils.readFileToString(new File(fileName), encoding);
+            File file = new File(fileName);
+            if(file.exists() && file.canRead()) {
+                myValue = FileUtils.readFileToString(new File(fileName), encoding);
+            } else {
+                log.warn("Could not read open: "+fileName+" ");
+            }
         } catch (IOException e) {
             log.warn("Could not read file: "+fileName+" "+e.getMessage(), e);
-            throw new JMeterStopThreadException("End of sequence", e);
         }
 
         if (myName.length() > 0) {

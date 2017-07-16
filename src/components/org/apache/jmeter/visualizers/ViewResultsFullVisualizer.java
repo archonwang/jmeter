@@ -46,6 +46,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTree;
+import javax.swing.Timer;
 import javax.swing.border.Border;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
@@ -55,6 +56,9 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 
+import org.apache.commons.collections.Buffer;
+import org.apache.commons.collections.buffer.CircularFifoBuffer;
+import org.apache.commons.collections.buffer.UnboundedFifoBuffer;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.JMeter;
 import org.apache.jmeter.assertions.AssertionResult;
@@ -63,8 +67,8 @@ import org.apache.jmeter.samplers.Clearable;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.visualizers.gui.AbstractVisualizer;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Base for ViewResults
@@ -73,9 +77,9 @@ import org.apache.log.Logger;
 public class ViewResultsFullVisualizer extends AbstractVisualizer
 implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
 
-    private static final long serialVersionUID = 7338676747296593842L;
+    private static final long serialVersionUID = 1L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(ViewResultsFullVisualizer.class);
 
     public static final Color SERVER_ERROR_COLOR = Color.red;
 
@@ -105,15 +109,15 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
 
     protected static final String COMBO_CHANGE_COMMAND = "change_combo"; // $NON-NLS-1$
 
-    private static final String iconSize = JMeterUtils.getPropDefault(JMeter.TREE_ICON_SIZE, JMeter.DEFAULT_TREE_ICON_SIZE);
+    private static final String ICON_SIZE = JMeterUtils.getPropDefault(JMeter.TREE_ICON_SIZE, JMeter.DEFAULT_TREE_ICON_SIZE);
 
     private static final ImageIcon imageSuccess = JMeterUtils.getImage(
             JMeterUtils.getPropDefault("viewResultsTree.success",  //$NON-NLS-1$
-                    "vrt/" + iconSize + "/security-high-2.png")); //$NON-NLS-1$ $NON-NLS-2$
+                    "vrt/" + ICON_SIZE + "/security-high-2.png")); //$NON-NLS-1$ $NON-NLS-2$
 
     private static final ImageIcon imageFailure = JMeterUtils.getImage(
             JMeterUtils.getPropDefault("viewResultsTree.failure",  //$NON-NLS-1$
-                    "vrt/" + iconSize + "/security-low-2.png")); //$NON-NLS-1$ $NON-NLS-2$
+                    "vrt/" + ICON_SIZE + "/security-low-2.png")); //$NON-NLS-1$ $NON-NLS-2$
 
     // Maximum size that we will display
     // Default limited to 10 megabytes
@@ -124,47 +128,70 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
     private static final String VIEWERS_ORDER =
         JMeterUtils.getPropDefault("view.results.tree.renderers_order", ""); // $NON-NLS-1$ //$NON-NLS-2$
 
+    private static final int REFRESH_PERIOD = JMeterUtils.getPropDefault("jmeter.gui.refresh_period", 500);
+
     private ResultRenderer resultsRender = null;
 
     private TreeSelectionEvent lastSelectionEvent;
 
     private JCheckBox autoScrollCB;
 
+    private Buffer buffer;
+
+    private boolean dataChanged;
+
     /**
      * Constructor
      */
     public ViewResultsFullVisualizer() {
         super();
+        final int maxResults = JMeterUtils.getPropDefault("view.results.tree.max_results", 500);
+        if (maxResults > 0) {
+            buffer = new CircularFifoBuffer(maxResults);
+        } else {
+            buffer = new UnboundedFifoBuffer();
+        }
         init();
+        new Timer(REFRESH_PERIOD, e -> updateGui()).start();
     }
 
     /** {@inheritDoc} */
+    @SuppressWarnings("unchecked")
     @Override
     public void add(final SampleResult sample) {
-        JMeterUtils.runSafe(false, new Runnable() {
-            @Override
-            public void run() {
-                updateGui(sample);
-            }
-        });
+        synchronized (buffer) {
+            buffer.add(sample);
+            dataChanged = true;
+        }
     }
 
     /**
      * Update the visualizer with new data.
      */
-    private synchronized void updateGui(SampleResult res) {
-        // Add sample
-        DefaultMutableTreeNode currNode = new SearchableTreeNode(res, treeModel);
-        treeModel.insertNodeInto(currNode, root, root.getChildCount());
-        addSubResults(currNode, res);
-        // Add any assertion that failed as children of the sample node
-        AssertionResult[] assertionResults = res.getAssertionResults();
-        int assertionIndex = currNode.getChildCount();
-        for (AssertionResult assertionResult : assertionResults) {
-            if (assertionResult.isFailure() || assertionResult.isError()) {
-                DefaultMutableTreeNode assertionNode = new SearchableTreeNode(assertionResult, treeModel);
-                treeModel.insertNodeInto(assertionNode, currNode, assertionIndex++);
+    private void updateGui() {
+        synchronized (buffer) {
+            if (!dataChanged) {
+                return;
             }
+            root.removeAllChildren();
+            for (Object sampler: buffer) {
+                SampleResult res = (SampleResult) sampler;
+                // Add sample
+                DefaultMutableTreeNode currNode = new SearchableTreeNode(res, treeModel);
+                treeModel.insertNodeInto(currNode, root, root.getChildCount());
+                addSubResults(currNode, res);
+                // Add any assertion that failed as children of the sample node
+                AssertionResult[] assertionResults = res.getAssertionResults();
+                int assertionIndex = currNode.getChildCount();
+                for (AssertionResult assertionResult : assertionResults) {
+                    if (assertionResult.isFailure() || assertionResult.isError()) {
+                        DefaultMutableTreeNode assertionNode = new SearchableTreeNode(assertionResult, treeModel);
+                        treeModel.insertNodeInto(assertionNode, currNode, assertionIndex++);
+                    }
+                }
+            }
+            treeModel.nodeStructureChanged(root);
+            dataChanged = false;
         }
 
         if (root.getChildCount() == 1) {
@@ -182,9 +209,7 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
         int leafIndex = 0;
 
         for (SampleResult child : subResults) {
-            if (log.isDebugEnabled()) {
-                log.debug("updateGui1 : child sample result - " + child);
-            }
+            log.debug("updateGui1 : child sample result - {}", child);
             DefaultMutableTreeNode leafNode = new SearchableTreeNode(child, treeModel);
 
             treeModel.insertNodeInto(leafNode, currNode, leafIndex++);
@@ -203,11 +228,10 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
 
     /** {@inheritDoc} */
     @Override
-    public synchronized void clearData() {
-        while (root.getChildCount() > 0) {
-            // the child to be removed will always be 0 'cos as the nodes are
-            // removed the nth node will become (n-1)th
-            treeModel.removeNodeFromParent((DefaultMutableTreeNode) root.getChildAt(0));
+    public void clearData() {
+        synchronized (buffer) {
+            buffer.clear();
+            dataChanged = true;
         }
         resultsRender.clearData();
     }
@@ -225,7 +249,6 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
         log.debug("init() - pass");
         setLayout(new BorderLayout(0, 5));
         setBorder(makeBorder());
-        add(makeTitlePanel(), BorderLayout.NORTH);
 
         leftSide = createLeftPanel();
         // Prepare the common tab
@@ -238,7 +261,10 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
         JSplitPane searchAndMainSP = new JSplitPane(JSplitPane.VERTICAL_SPLIT, 
                 new SearchTreePanel(root), mainSplit);
         searchAndMainSP.setOneTouchExpandable(true);
-        add(searchAndMainSP, BorderLayout.CENTER);
+        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, makeTitlePanel(), searchAndMainSP);
+        splitPane.setOneTouchExpandable(true);
+        add(splitPane);
+
         // init right side with first render
         resultsRender.setRightSide(rightSide);
         resultsRender.init();
@@ -248,7 +274,7 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
     @Override
     public void valueChanged(TreeSelectionEvent e) {
         lastSelectionEvent = e;
-        DefaultMutableTreeNode node = null;
+        DefaultMutableTreeNode node;
         synchronized (this) {
             node = (DefaultMutableTreeNode) jTree.getLastSelectedPathComponent();
         }
@@ -341,8 +367,8 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
                 }
                 renderer.setBackgroundColor(getBackground());
                 map.put(renderer.getClass().getName(), renderer);
-            } catch (Exception e) {
-                log.warn("Error loading result renderer:" + clazz, e);
+            } catch (Exception | NoClassDefFoundError e) { // NOSONAR See bug 60583
+                log.warn("Error loading result renderer: {}", clazz, e);
             }
         }
         if(VIEWERS_ORDER.length()>0) {
@@ -355,8 +381,10 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
                 if(renderer != null) {
                     selectRenderPanel.addItem(renderer);
                 } else {
-                    log.warn("Missing (check spelling error in renderer name) or already added(check doublon) " +
-                            "result renderer, check property 'view.results.tree.renderers_order', renderer name:'"+key+"'");
+                    log.warn(
+                            "Missing (check spelling error in renderer name) or already added(check doublon) "
+                                    + "result renderer, check property 'view.results.tree.renderers_order', renderer name: '{}'",
+                            key);
                 }
             }
         }
@@ -388,7 +416,7 @@ implements ActionListener, TreeSelectionListener, Clearable, ItemListener {
                     mainSplit.add(rightSide);
                     resultsRender.setRightSide(rightSide);
                     resultsRender.setLastSelectedTab(selectedTab);
-                    log.debug("selectedTab=" + selectedTab);
+                    log.debug("selectedTab={}", selectedTab);
                     resultsRender.init();
                     // To display current sampler result before change
                     this.valueChanged(lastSelectionEvent);

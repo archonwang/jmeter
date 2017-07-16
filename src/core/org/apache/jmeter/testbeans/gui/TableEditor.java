@@ -48,9 +48,9 @@ import org.apache.jmeter.testelement.property.TestElementProperty;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.gui.GuiUtils;
 import org.apache.jorphan.gui.ObjectTableModel;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.reflect.Functor;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Table editor for TestBean GUI properties.
@@ -60,7 +60,7 @@ import org.apache.log.Logger;
  * </ul>
  */
 public class TableEditor extends PropertyEditorSupport implements FocusListener,TestBeanPropertyEditor,TableModelListener, ClearGui {
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(TableEditor.class);
 
     /** 
      * attribute name for class name of a table row;
@@ -201,7 +201,7 @@ public class TableEditor extends PropertyEditorSupport implements FocusListener,
         this.descriptor = descriptor;
         String value = (String)descriptor.getValue(CLASSNAME);
         if (value == null) {
-            throw new RuntimeException("The Table Editor requires the CLASSNAME atttribute be set - the name of the object to represent a row");
+            throw new RuntimeException("The Table Editor requires the CLASSNAME attribute be set - the name of the object to represent a row");
         }
         try {
             clazz = Class.forName(value);
@@ -306,7 +306,7 @@ public class TableEditor extends PropertyEditorSupport implements FocusListener,
                 removeButton.setEnabled(true);
                 clearButton.setEnabled(true);
             } catch(Exception err) {
-                LOG.error("The class type given to TableEditor was not instantiable. ", err);
+                log.error("The class type given to TableEditor was not instantiable.", err);
             }
         }
     }
@@ -339,7 +339,7 @@ public class TableEditor extends PropertyEditorSupport implements FocusListener,
                     downButton.setEnabled(false);
                 }
             } catch (Exception err) {
-                LOG.error("The class type given to TableEditor was not instantiable. ", err);
+                log.error("The class type given to TableEditor was not instantiable.", err);
             }
         }
     }

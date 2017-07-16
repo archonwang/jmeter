@@ -36,7 +36,6 @@ import javax.script.ScriptException;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.collections.map.LRUMap;
-import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.samplers.Sampler;
@@ -44,17 +43,39 @@ import org.apache.jmeter.testelement.TestStateListener;
 import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/**
+ * Base class for JSR223 Test elements
+ */
 public abstract class JSR223TestElement extends ScriptingTestElement
     implements Serializable, TestStateListener
 {
+    private static final long serialVersionUID = 232L;
+        
+    /**
+     * Cache of compiled scripts
+     */
+    @SuppressWarnings("unchecked") // LRUMap does not support generics (yet)
+    private static final Map<String, CompiledScript> compiledScriptsCache = 
+            Collections.synchronizedMap(
+                    new LRUMap(JMeterUtils.getPropDefault("jsr223.compiled_scripts_cache_size", 100)));
+
+    /** If not empty then script in ScriptText will be compiled and cached */
+    private String cacheKey = "";
+    
+    /** md5 of the script, used as an unique key for the cache */
+    private String scriptMd5 = null;
+    
     /**
      * Initialization On Demand Holder pattern
      */
     private static class LazyHolder {
+        private LazyHolder() {
+            super();
+        }
         public static final ScriptEngineManager INSTANCE = new ScriptEngineManager();
     }
  
@@ -64,22 +85,6 @@ public abstract class JSR223TestElement extends ScriptingTestElement
     public static ScriptEngineManager getInstance() {
             return LazyHolder.INSTANCE;
     }
-    
-    private static final long serialVersionUID = 231L;
-    
-    /** If not empty then script in ScriptText will be compiled and cached */
-    private String cacheKey = "";
-    
-    /** md5 of the script, used as an unique key for the cache */
-    private String scriptMd5 = null;
-    
-    /**
-     * Cache of compiled scripts
-     */
-    @SuppressWarnings("unchecked") // LRUMap does not support generics (yet)
-    private static final Map<String, CompiledScript> compiledScriptsCache = 
-            Collections.synchronizedMap(
-                    new LRUMap(JMeterUtils.getPropDefault("jsr223.compiled_scripts_cache_size", 100)));
 
     public JSR223TestElement() {
         super();
@@ -119,7 +124,7 @@ public abstract class JSR223TestElement extends ScriptingTestElement
         final String fileName = getFilename();
         final String scriptParameters = getParameters();
         // Use actual class name for log
-        final Logger logger = LoggingManager.getLoggerForShortName(getClass().getName());
+        final Logger logger = LoggerFactory.getLogger(getClass());
         bindings.put("log", logger); // $NON-NLS-1$ (this name is fixed)
         bindings.put("Label", label); // $NON-NLS-1$ (this name is fixed)
         bindings.put("FileName", fileName); // $NON-NLS-1$ (this name is fixed)
@@ -134,7 +139,7 @@ public abstract class JSR223TestElement extends ScriptingTestElement
         Properties props = JMeterUtils.getJMeterProperties();
         bindings.put("props", props); // $NON-NLS-1$ (this name is fixed)
         // For use in debugging:
-        bindings.put("OUT", System.out); // $NON-NLS-1$ (this name is fixed)
+        bindings.put("OUT", System.out); // NOSONAR $NON-NLS-1$ (this name is fixed)
 
         // Most subclasses will need these:
         Sampler sampler = jmctx.getCurrentSampler();
@@ -154,73 +159,78 @@ public abstract class JSR223TestElement extends ScriptingTestElement
      * @throws IOException when reading the script fails
      * @throws ScriptException when compiling or evaluation of the script fails
      */
-    protected Object processFileOrScript(ScriptEngine scriptEngine, Bindings bindings) throws IOException, ScriptException {
+    protected Object processFileOrScript(ScriptEngine scriptEngine, Bindings bindings)
+            throws IOException, ScriptException {
         if (bindings == null) {
             bindings = scriptEngine.createBindings();
         }
         populateBindings(bindings);
-        File scriptFile = new File(getFilename()); 
-        // Hack: bsh-2.0b5.jar BshScriptEngine implements Compilable but throws "java.lang.Error: unimplemented"
-        boolean supportsCompilable = scriptEngine instanceof Compilable 
-                && !(scriptEngine.getClass().getName().equals("bsh.engine.BshScriptEngine")); // $NON-NLS-1$
-        if (!StringUtils.isEmpty(getFilename())) {
-            if (scriptFile.exists() && scriptFile.canRead()) {
-                BufferedReader fileReader = null;
-                try {
+        File scriptFile = new File(getFilename());
+        // Hack: bsh-2.0b5.jar BshScriptEngine implements Compilable but throws
+        // "java.lang.Error: unimplemented"
+        boolean supportsCompilable = scriptEngine instanceof Compilable
+                && !("bsh.engine.BshScriptEngine".equals(scriptEngine.getClass().getName())); // NOSONAR // $NON-NLS-1$
+        try {
+            if (!StringUtils.isEmpty(getFilename())) {
+                if (scriptFile.exists() && scriptFile.canRead()) {
                     if (supportsCompilable) {
-                        String cacheKey = 
-                                getScriptLanguage()+"#"+ // $NON-NLS-1$
-                                scriptFile.getAbsolutePath()+"#"+  // $NON-NLS-1$
-                                        scriptFile.lastModified();
-                        CompiledScript compiledScript = 
-                                compiledScriptsCache.get(cacheKey);
-                        if (compiledScript==null) {
+                        String cacheKey = getScriptLanguage() + "#" + // $NON-NLS-1$
+                                scriptFile.getAbsolutePath() + "#" + // $NON-NLS-1$
+                                scriptFile.lastModified();
+                        CompiledScript compiledScript = compiledScriptsCache.get(cacheKey);
+                        if (compiledScript == null) {
                             synchronized (compiledScriptsCache) {
-                                compiledScript = 
-                                        compiledScriptsCache.get(cacheKey);
-                                if (compiledScript==null) {
+                                compiledScript = compiledScriptsCache.get(cacheKey);
+                                if (compiledScript == null) {
                                     // TODO Charset ?
-                                    fileReader = new BufferedReader(new FileReader(scriptFile), 
-                                            (int)scriptFile.length()); 
-                                    compiledScript = 
-                                            ((Compilable) scriptEngine).compile(fileReader);
-                                    compiledScriptsCache.put(cacheKey, compiledScript);
+                                    try (BufferedReader fileReader = new BufferedReader(new FileReader(scriptFile),
+                                            (int) scriptFile.length())) {
+                                        compiledScript = ((Compilable) scriptEngine).compile(fileReader);
+                                        compiledScriptsCache.put(cacheKey, compiledScript);
+                                    }
                                 }
                             }
                         }
                         return compiledScript.eval(bindings);
                     } else {
                         // TODO Charset ?
-                        fileReader = new BufferedReader(new FileReader(scriptFile), 
-                                (int)scriptFile.length()); 
-                        return scriptEngine.eval(fileReader, bindings);                    
-                    }
-                } finally {
-                    IOUtils.closeQuietly(fileReader);
-                }
-            }  else {
-                throw new ScriptException("Script file '"+scriptFile.getAbsolutePath()+"' does not exist or is unreadable for element:"+getName());
-            }
-        } else if (!StringUtils.isEmpty(getScript())) {
-            if (supportsCompilable && !StringUtils.isEmpty(cacheKey)) {
-                computeScriptMD5();
-                CompiledScript compiledScript = compiledScriptsCache.get(this.scriptMd5);
-                if (compiledScript == null) {
-                    synchronized (compiledScriptsCache) {
-                        compiledScript = compiledScriptsCache.get(this.scriptMd5);
-                        if (compiledScript == null) {
-                            compiledScript = ((Compilable) scriptEngine).compile(getScript());
-                            compiledScriptsCache.put(this.scriptMd5, compiledScript);
+                        try (BufferedReader fileReader = new BufferedReader(new FileReader(scriptFile),
+                                (int) scriptFile.length())) {
+                            return scriptEngine.eval(fileReader, bindings);
                         }
                     }
+                } else {
+                    throw new ScriptException("Script file '" + scriptFile.getAbsolutePath()
+                            + "' does not exist or is unreadable for element:" + getName());
                 }
-                
-                return compiledScript.eval(bindings);
+            } else if (!StringUtils.isEmpty(getScript())) {
+                if (supportsCompilable && !StringUtils.isEmpty(cacheKey)) {
+                    computeScriptMD5();
+                    CompiledScript compiledScript = compiledScriptsCache.get(this.scriptMd5);
+                    if (compiledScript == null) {
+                        synchronized (compiledScriptsCache) {
+                            compiledScript = compiledScriptsCache.get(this.scriptMd5);
+                            if (compiledScript == null) {
+                                compiledScript = ((Compilable) scriptEngine).compile(getScript());
+                                compiledScriptsCache.put(this.scriptMd5, compiledScript);
+                            }
+                        }
+                    }
+
+                    return compiledScript.eval(bindings);
+                } else {
+                    return scriptEngine.eval(getScript(), bindings);
+                }
             } else {
-                return scriptEngine.eval(getScript(), bindings);
+                throw new ScriptException("Both script file and script text are empty for element:" + getName());
             }
-        } else {
-            throw new ScriptException("Both script file and script text are empty for element:"+getName());            
+        } catch (ScriptException ex) {
+            Throwable rootCause = ex.getCause();
+            if(isStopCondition(rootCause)) {
+                throw (RuntimeException) ex.getCause();
+            } else {
+                throw ex;
+            }
         }
     }
 

@@ -42,14 +42,13 @@ import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.jmeter.reporters.ResultCollectorHelper;
 import org.apache.jmeter.samplers.SampleEvent;
 import org.apache.jmeter.samplers.SampleResult;
-import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.util.NameUpdater;
 import org.apache.jorphan.collections.HashTree;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.util.JMeterError;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.thoughtworks.xstream.XStream;
 import com.thoughtworks.xstream.converters.ConversionException;
@@ -69,7 +68,7 @@ import com.thoughtworks.xstream.mapper.MapperWrapper;
  */
 public class SaveService {
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(SaveService.class);
 
     // Names of DataHolder entries for JTL processing
     public static final String SAMPLE_EVENT_OBJECT = "SampleEvent"; // $NON-NLS-1$
@@ -148,18 +147,18 @@ public class SaveService {
     
     // Must match _version property value in saveservice.properties
     // used to ensure saveservice.properties and SaveService are updated simultaneously
-    static final String PROPVERSION = "3.1";// Expected version $NON-NLS-1$
+    static final String PROPVERSION = "3.2";// Expected version $NON-NLS-1$
 
     // Internal information only
     private static String fileVersion = ""; // computed from saveservice.properties file// $NON-NLS-1$
     // Must match the sha1 checksum of the file saveservice.properties (without newline character),
     // used to ensure saveservice.properties and SaveService are updated simultaneously
-    static final String FILEVERSION = "687b9fce95500ae04102444b9bf40ddd970c62aa"; // Expected value $NON-NLS-1$
+    static final String FILEVERSION = "4336c68d43562b80a1d1b5feba226aa36f52597b"; // Expected value $NON-NLS-1$
 
     private static String fileEncoding = ""; // read from properties file// $NON-NLS-1$
 
     static {
-        log.info("Testplan (JMX) version: "+VERSION_2_2+". Testlog (JTL) version: "+VERSION_2_2);
+        log.info("Testplan (JMX) version: {}. Testlog (JTL) version: {}", VERSION_2_2, VERSION_2_2);
         initProps();
         checkVersions();
     }
@@ -171,12 +170,12 @@ public class SaveService {
         for (String a : aliases){
             Object old = aliasToClass.setProperty(a,clazz);
             if (old != null){
-                log.error("Duplicate class detected for "+alias+": "+clazz+" & "+old);                
+                log.error("Duplicate class detected for {}: {} & {}", alias, clazz, old);
             }
         }
         Object oldval=classToAlias.setProperty(clazz,alias);
         if (oldval != null) {
-            log.error("Duplicate alias detected for "+clazz+": "+alias+" & "+oldval);
+            log.error("Duplicate alias detected for {}: {} & {}", clazz, alias, oldval);
         }
     }
 
@@ -209,7 +208,7 @@ public class SaveService {
         try {
             fileVersion = getChecksumForPropertiesFile();
         } catch (IOException | NoSuchAlgorithmException e) {
-            log.fatalError("Can't compute checksum for saveservice properties file", e);
+            log.error("Can't compute checksum for saveservice properties file", e);
             throw new JMeterError("JMeter requires the checksum of saveservice properties file to continue", e);
         }
         try {
@@ -224,13 +223,13 @@ public class SaveService {
                     // process special keys
                     if (key.equalsIgnoreCase("_version")) { // $NON-NLS-1$
                         propertiesVersion = val;
-                        log.info("Using SaveService properties version " + propertiesVersion);
+                        log.info("Using SaveService properties version {}", propertiesVersion);
                     } else if (key.equalsIgnoreCase("_file_version")) { // $NON-NLS-1$
                         log.info("SaveService properties file version is now computed by a checksum,"
                                 + "the property _file_version is not used anymore and can be removed.");
                     } else if (key.equalsIgnoreCase("_file_encoding")) { // $NON-NLS-1$
                         fileEncoding = val;
-                        log.info("Using SaveService properties file encoding " + fileEncoding);
+                        log.info("Using SaveService properties file encoding {}", fileEncoding);
                     } else {
                         key = key.substring(1);// Remove the leading "_"
                         try {
@@ -245,13 +244,13 @@ public class SaveService {
                             }
                         } catch (IllegalAccessException | InstantiationException | ClassNotFoundException | IllegalArgumentException|
                                 SecurityException | InvocationTargetException | NoSuchMethodException e1) {
-                            log.warn("Can't register a converter: " + key, e1);
+                            log.warn("Can't register a converter: {}", key, e1);
                         }
                     }
                 }
             }
         } catch (IOException e) {
-            log.fatalError("Bad saveservice properties file", e);
+            log.error("Bad saveservice properties file", e);
             throw new JMeterError("JMeter requires the saveservice properties file to continue");
         }
     }
@@ -356,37 +355,9 @@ public class SaveService {
         try {
             return "class:"+result.getClass()+",content:"+ToStringBuilder.reflectionToString(result);
         } catch(Exception e) {
-            return "Exception occured creating debug from event, message:"+e.getMessage();
+            return "Exception occurred creating debug from event, message:"+e.getMessage();
         }
     }
-
-    /**
-     * @param elem test element
-     * @param writer output stream which must be created using {@link #getFileEncoding(String)}
-     * @throws IOException when writing data to output fails
-     */
-    // Used by ResultCollector#recordStats()
-    public synchronized static void saveTestElement(TestElement elem, Writer writer) throws IOException {
-        JMXSAVER.toXML(elem, writer); // TODO should this be JTLSAVER? Only seems to be called by MonitorHealthVisualzer
-        writer.write('\n');
-    }
-
-    private static boolean versionsOK = true;
-
-//  private static void checkVersion(Class clazz, String expected) {
-//
-//      String actual = "*NONE*"; // $NON-NLS-1$
-//      try {
-//          actual = (String) clazz.getMethod("getVersion", null).invoke(null, null);
-//          actual = extractVersion(actual);
-//      } catch (Exception ignored) {
-//          // Not needed
-//      }
-//      if (0 != actual.compareTo(expected)) {
-//          versionsOK = false;
-//          log.warn("Version mismatch: expected '" + expected + "' found '" + actual + "' in " + clazz.getName());
-//      }
-//  }
 
     // Routines for TestSaveService
     static String getPropertyVersion(){
@@ -408,7 +379,7 @@ public class SaveService {
                 try {
                     Class.forName(name, false, classLoader);
                 } catch (ClassNotFoundException e) {
-                        log.error("Unexpected entry in saveservice.properties; class does not exist and is not upgraded: "+name);              
+                        log.error("Unexpected entry in saveservice.properties; class does not exist and is not upgraded: {}", name);
                         missingClasses.add(name);
                 }
             }
@@ -416,42 +387,10 @@ public class SaveService {
         return missingClasses;
     }
 
-    static boolean checkVersions() {
-        versionsOK = true;
-        // Disable converter version checks as they are more of a nuisance than helpful
-//      checkVersion(BooleanPropertyConverter.class, "493779"); // $NON-NLS-1$
-//      checkVersion(HashTreeConverter.class, "514283"); // $NON-NLS-1$
-//      checkVersion(IntegerPropertyConverter.class, "493779"); // $NON-NLS-1$
-//      checkVersion(LongPropertyConverter.class, "493779"); // $NON-NLS-1$
-//      checkVersion(MultiPropertyConverter.class, "514283"); // $NON-NLS-1$
-//      checkVersion(SampleResultConverter.class, "571992"); // $NON-NLS-1$
-//
-//        // Not built until later, so need to use this method:
-//        try {
-//            checkVersion(
-//                    Class.forName("org.apache.jmeter.protocol.http.util.HTTPResultConverter"), // $NON-NLS-1$
-//                    "514283"); // $NON-NLS-1$
-//        } catch (ClassNotFoundException e) {
-//            versionsOK = false;
-//            log.warn(e.getLocalizedMessage());
-//        }
-//      checkVersion(StringPropertyConverter.class, "493779"); // $NON-NLS-1$
-//      checkVersion(TestElementConverter.class, "549987"); // $NON-NLS-1$
-//      checkVersion(TestElementPropertyConverter.class, "549987"); // $NON-NLS-1$
-//      checkVersion(ScriptWrapperConverter.class, "514283"); // $NON-NLS-1$
-//      checkVersion(TestResultWrapperConverter.class, "514283"); // $NON-NLS-1$
-//        checkVersion(SampleSaveConfigurationConverter.class,"549936"); // $NON-NLS-1$
-
+    private static void checkVersions() {
         if (!PROPVERSION.equalsIgnoreCase(propertiesVersion)) {
-            log.warn("Bad _version - expected " + PROPVERSION + ", found " + propertiesVersion + ".");
+            log.warn("Bad _version - expected {}, found {}.", PROPVERSION, propertiesVersion);
         }
-//        if (!FILEVERSION.equalsIgnoreCase(fileVersion)) {
-//            log.warn("Bad _file_version - expected " + FILEVERSION + ", found " + fileVersion +".");
-//        }
-        if (versionsOK) {
-            log.info("All converter versions present and correct");
-        }
-        return versionsOK;
     }
 
     /**
@@ -471,25 +410,6 @@ public class SaveService {
         JTLSAVER.unmarshal(new XppDriver().createReader(reader), null, dh);
         inputStreamReader.close();
     }
-
-    /**
-     * Load a Test tree (JMX file)
-     * @param inputStream the JMX file as an {@link InputStream}
-     * @return the loaded tree or null if an error occurs
-     * @throws IOException if there is a problem reading the file or processing it
-     * @deprecated use {@link SaveService}{@link #loadTree(File)}
-     */
-    @Deprecated
-    public static HashTree loadTree(InputStream inputStream) throws IOException {
-        try {
-            return readTree(inputStream, null);
-        } catch(IllegalArgumentException e) {
-            log.error("Problem loading XML, message:"+e.getMessage(), e);
-            return null;
-        } finally {
-            JOrphanUtils.closeQuietly(inputStream);
-        }
-    }
     
     /**
      * Load a Test tree (JMX file)
@@ -498,7 +418,7 @@ public class SaveService {
      * @throws IOException if there is a problem reading the file or processing it
      */
     public static HashTree loadTree(File file) throws IOException {
-        log.info("Loading file: " + file);
+        log.info("Loading file: {}", file);
         try (InputStream inputStream = new FileInputStream(file);
                 BufferedInputStream bufferedInputStream = 
                     new BufferedInputStream(inputStream)){
@@ -544,25 +464,13 @@ public class SaveService {
     private static InputStreamReader getInputStreamReader(InputStream inStream) {
         // Check if we have a encoding to use from properties
         Charset charset = getFileEncodingCharset();
-        if(charset != null) {
-            return new InputStreamReader(inStream, charset);
-        }
-        else {
-            // We use the default character set encoding of the JRE
-            return new InputStreamReader(inStream);
-        }
+        return new InputStreamReader(inStream, charset);
     }
 
     private static OutputStreamWriter getOutputStreamWriter(OutputStream outStream) {
         // Check if we have a encoding to use from properties
         Charset charset = getFileEncodingCharset();
-        if(charset != null) {
-            return new OutputStreamWriter(outStream, charset);
-        }
-        else {
-            // We use the default character set encoding of the JRE
-            return new OutputStreamWriter(outStream);
-        }
+        return new OutputStreamWriter(outStream, charset);
     }
 
     /**
@@ -581,27 +489,28 @@ public class SaveService {
         }
     }
 
+    // @NotNull
     private static Charset getFileEncodingCharset() {
         // Check if we have a encoding to use from properties
         if(fileEncoding != null && fileEncoding.length() > 0) {
             return Charset.forName(fileEncoding);
         }
         else {
+            
             // We use the default character set encoding of the JRE
-            return null;
+            log.info("fileEncoding not defined - using JRE default");
+            return Charset.defaultCharset();
         }
     }
 
     private static void writeXmlHeader(OutputStreamWriter writer) throws IOException {
         // Write XML header if we have the charset to use for encoding
         Charset charset = getFileEncodingCharset();
-        if(charset != null) {
-            // We do not use getEncoding method of Writer, since that returns
-            // the historical name
-            String header = XML_HEADER.replaceAll("<ph>", charset.name());
-            writer.write(header);
-            writer.write('\n');
-        }
+        // We do not use getEncoding method of Writer, since that returns
+        // the historical name
+        String header = XML_HEADER.replaceAll("<ph>", charset.name());
+        writer.write(header);
+        writer.write('\n');
     }
 
 //  Normal output

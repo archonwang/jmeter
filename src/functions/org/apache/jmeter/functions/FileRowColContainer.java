@@ -27,8 +27,8 @@ import java.util.List;
 import java.util.StringTokenizer;
 
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * File data container for CSV (and similar delimited) files Data is accessible
@@ -37,7 +37,7 @@ import org.apache.log.Logger;
  */
 public class FileRowColContainer {
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(FileRowColContainer.class);
 
     private final List<List<String>> fileData; // Lines in the file, split into columns
 
@@ -72,11 +72,8 @@ public class FileRowColContainer {
     }
 
     private void load() throws IOException, FileNotFoundException {
-
-        BufferedReader myBread = null;
-        try {
-            FileReader fis = new FileReader(fileName);
-            myBread = new BufferedReader(fis);
+        try ( FileReader fis = new FileReader(fileName);
+                BufferedReader myBread = new BufferedReader(fis);) {
             String line = myBread.readLine();
             /*
              * N.B. Stop reading the file if we get a blank line: This allows
@@ -90,10 +87,6 @@ public class FileRowColContainer {
             fileData.clear();
             log.warn(e.toString());
             throw e;
-        } finally {
-            if (myBread != null) {
-                myBread.close();
-            }
         }
     }
 

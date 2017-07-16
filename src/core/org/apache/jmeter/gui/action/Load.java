@@ -41,8 +41,8 @@ import org.apache.jmeter.testelement.TestPlan;
 import org.apache.jmeter.testelement.WorkBench;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.collections.HashTree;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.thoughtworks.xstream.converters.ConversionException;
 
@@ -51,9 +51,9 @@ import com.thoughtworks.xstream.converters.ConversionException;
  *
  */
 public class Load extends AbstractActionWithNoRunningTest {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(Load.class);
 
-    private static final boolean expandTree = JMeterUtils.getPropDefault("onload.expandtree", false); //$NON-NLS-1$
+    private static final boolean EXPAND_TREE = JMeterUtils.getPropDefault("onload.expandtree", false); //$NON-NLS-1$
 
     private static final Set<String> commands = new HashSet<>();
 
@@ -118,9 +118,9 @@ public class Load extends AbstractActionWithNoRunningTest {
         if (f != null) {
             try {
                 if (merging) {
-                    log.info("Merging file: " + f);
+                    log.info("Merging file: {}", f);
                 } else {
-                    log.info("Loading file: " + f);
+                    log.info("Loading file: {}", f);
                     // TODO should this be done even if not a full test plan?
                     // and what if load fails?
                     if (setDetails) {
@@ -137,14 +137,16 @@ public class Load extends AbstractActionWithNoRunningTest {
                     guiPackage.setTestPlanFile(f.getAbsolutePath());
                 }
             } catch (NoClassDefFoundError ex) {// Allow for missing optional jars
-                reportError("Missing jar file", ex, true);
+                reportError("Missing jar file. {}", ex, true);
             } catch (ConversionException ex) {
-                log.warn("Could not convert file "+ex);
+                if (log.isWarnEnabled()) {
+                    log.warn("Could not convert file. {}", ex.toString());
+                }
                 JMeterUtils.reportErrorToUser(SaveService.CEtoString(ex));
             } catch (IOException ex) {
-                reportError("Error reading file: ", ex, false);
+                reportError("Error reading file. {}", ex, false);
             } catch (Exception ex) {
-                reportError("Unexpected error", ex, true);
+                reportError("Unexpected error. {}", ex, true);
             }
             FileDialoger.setLastJFCDirectory(f.getParentFile().getAbsolutePath());
             guiPackage.updateCurrentGui();
@@ -164,7 +166,6 @@ public class Load extends AbstractActionWithNoRunningTest {
      */
     // Does not appear to be used externally; called by #loadProjectFile()
     public static boolean insertLoadedTree(final int id, final HashTree tree, final boolean merging) throws IllegalUserActionException {
-        // convertTree(tree);
         if (tree == null) {
             throw new IllegalUserActionException("Empty TestPlan or error reading test plan - see log file");
         }
@@ -203,7 +204,7 @@ public class Load extends AbstractActionWithNoRunningTest {
 
         ActionRouter.getInstance().actionPerformed(actionEvent);
         final JTree jTree = guiInstance.getMainFrame().getTree();
-        if (expandTree && !merging) { // don't automatically expand when merging
+        if (EXPAND_TREE && !merging) { // don't automatically expand when merging
             for(int i = 0; i < jTree.getRowCount(); i++) {
                 jTree.expandRow(i);
             }
@@ -230,11 +231,13 @@ public class Load extends AbstractActionWithNoRunningTest {
     }
 
     // Helper method to simplify code
-    private static void reportError(final String reason, final Throwable ex, final boolean stackTrace) {
-        if (stackTrace) {
-            log.warn(reason, ex);
-        } else {
-            log.warn(reason + ex);
+    private static void reportError(final String messageFormat, final Throwable ex, final boolean stackTrace) {
+        if (log.isWarnEnabled()) {
+            if (stackTrace) {
+                log.warn(messageFormat, ex.toString(), ex);
+            } else {
+                log.warn(messageFormat, ex.toString());
+            }
         }
         String msg = ex.getMessage();
         if (msg == null) {

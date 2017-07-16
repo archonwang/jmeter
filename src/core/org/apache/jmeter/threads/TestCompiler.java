@@ -43,8 +43,8 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.timers.Timer;
 import org.apache.jorphan.collections.HashTree;
 import org.apache.jorphan.collections.HashTreeTraverser;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * HashTreeTraverser implementation that traverses the Test Tree to build:
@@ -55,14 +55,7 @@ import org.apache.log.Logger;
  */
 public class TestCompiler implements HashTreeTraverser {
 
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
-
-    /** 
-     * @deprecated since 3.0 will be removed in the next version 3.1. 
-     * Constant is not used since 3.0
-     */
-    @Deprecated
-    public static final boolean IS_USE_STATIC_SET = false;
+    private static final Logger log = LoggerFactory.getLogger(TestCompiler.class);
 
     /**
      * This set keeps track of which ObjectPairs have been seen.
@@ -137,7 +130,9 @@ public class TestCompiler implements HashTreeTraverser {
     /** {@inheritDoc} */
     @Override
     public void subtractNode() {
-        LOG.debug("Subtracting node, stack size = " + stack.size());
+        if (log.isDebugEnabled()) {
+            log.debug("Subtracting node, stack size = {}", stack.size());
+        }
         TestElement child = stack.getLast();
         trackIterationListeners(stack);
         if (child instanceof Sampler) {
@@ -147,7 +142,7 @@ public class TestCompiler implements HashTreeTraverser {
             saveTransactionControllerConfigs((TransactionController) child);
         }
         stack.removeLast();
-        if (stack.size() > 0) {
+        if (!stack.isEmpty()) {
             TestElement parent = stack.getLast();
             boolean duplicate = false;
             // Bug 53750: this condition used to be in ObjectPair#addTestElements()
@@ -168,7 +163,9 @@ public class TestCompiler implements HashTreeTraverser {
                 }
             }
             if (duplicate) {
-                LOG.warn("Unexpected duplicate for " + parent.getClass().getName() + " and " + child.getClass().getName());
+                if (log.isWarnEnabled()) {
+                    log.warn("Unexpected duplicate for {} and {}", parent.getClass(), child.getClass());
+                }
             }
         }
     }
@@ -209,7 +206,7 @@ public class TestCompiler implements HashTreeTraverser {
             List<PreProcessor>  tempPre = new LinkedList<>();
             List<PostProcessor> tempPost = new LinkedList<>();
             for (Object item : testTree.list(stack.subList(0, i))) {
-                if ((item instanceof ConfigTestElement)) {
+                if (item instanceof ConfigTestElement) {
                     configs.add((ConfigTestElement) item);
                 }
                 if (item instanceof SampleListener) {
@@ -272,7 +269,7 @@ public class TestCompiler implements HashTreeTraverser {
      */
     private void addDirectParentControllers(List<Controller> controllers, TestElement maybeController) {
         if (maybeController instanceof Controller) {
-            LOG.debug("adding controller: " + maybeController + " to sampler config");
+            log.debug("adding controller: {} to sampler config", maybeController);
             controllers.add((Controller) maybeController);
         }
     }

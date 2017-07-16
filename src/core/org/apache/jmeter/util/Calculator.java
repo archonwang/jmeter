@@ -117,7 +117,7 @@ public class Calculator {
         addSentBytes(res.getSentBytes());
         addValue(res.getTime(),res.getSampleCount());
         errors+=res.getErrorCount(); // account for multiple samples
-        if (startTime == 0){ // not yet intialised
+        if (startTime == 0){ // not yet initialised
             startTime=res.getStartTime();
         } else {
             startTime = Math.min(startTime, res.getStartTime());
@@ -185,10 +185,10 @@ public class Calculator {
         double rval = 0.0;
 
         if (count == 0) {
-            return (rval);
+            return rval;
         }
         rval = (double) errors / (double) count;
-        return (rval);
+        return rval;
     }
 
     /**

@@ -35,8 +35,8 @@ import org.apache.jmeter.threads.JMeterContext;
 import org.apache.jmeter.threads.JMeterContextService;
 import org.apache.jmeter.threads.JMeterVariables;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 import org.mozilla.javascript.Context;
 import org.mozilla.javascript.RhinoException;
 import org.mozilla.javascript.Scriptable;
@@ -57,8 +57,8 @@ public class JavaScript extends AbstractFunction {
         public static final ScriptEngineManager INSTANCE = new ScriptEngineManager();
     }
  
-    private static final boolean USE_RHINO_ENGINE = 
-            JMeterUtils.getPropDefault(USE_RHINO_ENGINE_PROPERTY, true) || 
+    private final boolean useRhinoEngine = 
+            JMeterUtils.getPropDefault(USE_RHINO_ENGINE_PROPERTY, false) || 
             (getInstance().getEngineByName(JavaScript.NASHORN_ENGINE_NAME) == null);
 
     /**
@@ -71,7 +71,7 @@ public class JavaScript extends AbstractFunction {
 
     private static final String KEY = "__javaScript"; //$NON-NLS-1$
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(JavaScript.class);
 
     static {
         desc.add(JMeterUtils.getResString("javascript_expression"));//$NON-NLS-1$
@@ -96,7 +96,7 @@ public class JavaScript extends AbstractFunction {
         String varName = values.length < 2 ? null : ((CompoundVariable) values[1]).execute().trim();
         String resultStr = "";
 
-        if(USE_RHINO_ENGINE) {
+        if(useRhinoEngine) {
             resultStr = executeWithRhino(previousResult, currentSampler, jmctx,
                 vars, script, varName);
         } else {

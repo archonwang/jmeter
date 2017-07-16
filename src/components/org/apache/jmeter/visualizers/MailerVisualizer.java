@@ -49,12 +49,12 @@ import org.apache.jmeter.samplers.SampleResult;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jmeter.visualizers.gui.AbstractVisualizer;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /*
  * TODO : - Create a subpanel for other visualizers - connect to the properties. -
- * Get the specific URL that is failing. - add a seperate interface to collect
+ * Get the specific URL that is failing. - add a separate interface to collect
  * the thrown failure messages. - - suggestions ;-)
  */
 
@@ -63,9 +63,9 @@ import org.apache.log.Logger;
  *
  */
 public class MailerVisualizer extends AbstractVisualizer implements ActionListener, Clearable, ChangeListener {
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(MailerVisualizer.class);
 
     private JButton testerButton;
 
@@ -421,13 +421,7 @@ public class MailerVisualizer extends AbstractVisualizer implements ActionListen
      * Shows a message using a DialogBox.
      */
     private void displayMessage(String message, boolean isError) {
-        int type = 0;
-
-        if (isError) {
-            type = JOptionPane.ERROR_MESSAGE;
-        } else {
-            type = JOptionPane.INFORMATION_MESSAGE;
-        }
+        int type = isError ? JOptionPane.ERROR_MESSAGE : JOptionPane.INFORMATION_MESSAGE;
         JOptionPane.showMessageDialog(null, message, isError ? 
                 JMeterUtils.getResString("mailer_msg_title_error") :  // $NON-NLS-1$
                     JMeterUtils.getResString("mailer_msg_title_information"), type); // $NON-NLS-1$

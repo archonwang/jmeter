@@ -20,7 +20,7 @@ package org.apache.jmeter.protocol.java.sampler;
 
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
-import java.io.InputStream;
+import java.nio.charset.Charset;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
@@ -37,8 +37,8 @@ import org.apache.jmeter.samplers.Sampler;
 import org.apache.jmeter.testbeans.TestBean;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.BSFTestElement;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A sampler which understands BSF
@@ -49,9 +49,9 @@ public class BSFSampler extends BSFTestElement implements Sampler, TestBean, Con
     private static final Set<String> APPLIABLE_CONFIG_CLASSES = new HashSet<>(
             Arrays.asList("org.apache.jmeter.config.gui.SimpleConfigGui"));
 
-    private static final long serialVersionUID = 240L;
+    private static final long serialVersionUID = 241L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(BSFSampler.class);
 
     public BSFSampler() {
         super();
@@ -63,10 +63,10 @@ public class BSFSampler extends BSFTestElement implements Sampler, TestBean, Con
         final String label = getName();
         final String request = getScript();
         final String fileName = getFilename();
-        log.debug(label + " " + fileName);
+        log.debug("{} {}", label, fileName);
         SampleResult res = new SampleResult();
         res.setSampleLabel(label);
-        InputStream is = null;
+        
         BSFEngine bsfEngine = null;
         // There's little point saving the manager between invocations
         // as we need to reset most of the beans anyway
@@ -91,8 +91,10 @@ public class BSFSampler extends BSFTestElement implements Sampler, TestBean, Con
             Object bsfOut = null;
             if (fileName.length()>0) {
                 res.setSamplerData("File: "+fileName);
-                is = new BufferedInputStream(new FileInputStream(fileName));
-                bsfOut = bsfEngine.eval(fileName, 0, 0, IOUtils.toString(is));
+                try (FileInputStream fis = new FileInputStream(fileName); 
+                        BufferedInputStream is = new BufferedInputStream(fis)) {
+                    bsfOut = bsfEngine.eval(fileName, 0, 0, IOUtils.toString(is, Charset.defaultCharset()));
+                }
             } else {
                 res.setSamplerData(request);
                 bsfOut = bsfEngine.eval("script", 0, 0, request);
@@ -113,11 +115,6 @@ public class BSFSampler extends BSFTestElement implements Sampler, TestBean, Con
             res.setResponseMessage(ex.toString());
         } finally {
             res.sampleEnd();
-            IOUtils.closeQuietly(is);
-// Will be done by mgr.terminate() anyway
-//          if (bsfEngine != null) {
-//              bsfEngine.terminate();
-//          }
             mgr.terminate();
         }
 

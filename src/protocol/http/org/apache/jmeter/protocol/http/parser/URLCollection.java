@@ -24,9 +24,10 @@ import java.util.Collection;
 import java.util.Iterator;
 
 import org.apache.commons.lang3.StringEscapeUtils;
+import org.apache.commons.lang3.Validate;
 import org.apache.jmeter.protocol.http.util.ConversionUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 
 /**
  * Collection class designed for handling URLs
@@ -38,17 +39,17 @@ import org.apache.log.Logger;
  * does not support remove()
  *
  */
-public class URLCollection {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+public class URLCollection implements Iterable<URL> {
+    private static final Logger log = LoggerFactory.getLogger(URLCollection.class);
     private final Collection<URLString> coll;
 
     /**
      * Creates a new URLCollection from an existing Collection
      *
-     * @param c collection to start with
+     * @param c collection to start with (Must not be {@code null})
      */
     public URLCollection(Collection<URLString> c) {
-        coll = c;
+        coll = Validate.notNull(c);
     }
 
     /**
@@ -88,7 +89,7 @@ public class URLCollection {
         } catch (MalformedURLException mfue) {
             // No WARN message to avoid performance impact
             if(log.isDebugEnabled()) {
-                log.debug("Error occured building relative url for:"+url+", message:"+mfue.getMessage());
+                log.debug("Error occurred building relative url for:"+url+", message:"+mfue.getMessage());
             }
             // No point in adding the URL as String as it will result in null 
             // returned during iteration, see URLString
@@ -98,6 +99,7 @@ public class URLCollection {
         return b;
     }
 
+    @Override
     public Iterator<URL> iterator() {
         return new UrlIterator(coll.iterator());
     }

@@ -23,6 +23,7 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.http.conn.DnsResolver;
@@ -33,9 +34,12 @@ import org.apache.jmeter.testelement.TestIterationListener;
 import org.apache.jmeter.testelement.property.BooleanProperty;
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
+import org.apache.jmeter.testelement.property.NullProperty;
+import org.apache.jmeter.testelement.property.PropertyIterator;
+import org.apache.jmeter.testelement.property.TestElementProperty;
 import org.apache.jmeter.threads.JMeterContextService;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 import org.xbill.DNS.ARecord;
 import org.xbill.DNS.Cache;
 import org.xbill.DNS.ExtendedResolver;
@@ -57,38 +61,43 @@ import org.xbill.DNS.Type;
  */
 
 public class DNSCacheManager extends ConfigTestElement implements TestIterationListener, Serializable, DnsResolver {
-    private static final long serialVersionUID = 2120L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final long serialVersionUID = 2122L;
 
-    private transient SystemDefaultDnsResolver systemDefaultDnsResolver = null;
-
-    private Map<String, InetAddress[]> cache = null;
-
-    private transient Resolver resolver = null;
-
-    //++ JMX tag values
-    public static final String CLEAR_CACHE_EACH_ITER = "DNSCacheManager.clearEachIteration"; // $NON-NLS-1$
-
-    public static final String SERVERS = "DNSCacheManager.servers"; // $NON-NLS-1$
-
-    public static final String IS_CUSTOM_RESOLVER = "DNSCacheManager.isCustomResolver"; // $NON-NLS-1$
-    //-- JMX tag values
+    private static final Logger log = LoggerFactory.getLogger(DNSCacheManager.class);
 
     public static final boolean DEFAULT_CLEAR_CACHE_EACH_ITER = false;
 
-    public static final String DEFAULT_SERVERS = ""; // $NON-NLS-1$
+    //++ JMX tag values
+    private static final String CLEAR_CACHE_EACH_ITER = "DNSCacheManager.clearEachIteration"; // $NON-NLS-1$
 
-    public static final boolean DEFAULT_IS_CUSTOM_RESOLVER = false;
+    private static final String SERVERS = "DNSCacheManager.servers"; // $NON-NLS-1$
+
+    private  static final String HOSTS = "DNSCacheManager.hosts"; // $NON-NLS-1$
+
+    private static final String IS_CUSTOM_RESOLVER = "DNSCacheManager.isCustomResolver"; // $NON-NLS-1$
+    //-- JMX tag values
+
+    private static final boolean DEFAULT_IS_CUSTOM_RESOLVER = false;
 
     private final transient Cache lookupCache;
 
+    private final transient SystemDefaultDnsResolver systemDefaultDnsResolver;
+
+    final Map<String, InetAddress[]> cache;
+
+    transient Resolver resolver;
+
     private transient int timeoutMs;
+
+    transient boolean initFailed;
 
     // ensure that the initial DNSServers are copied to the per-thread instances
 
     public DNSCacheManager() {
         setProperty(new CollectionProperty(SERVERS, new ArrayList<String>()));
+        this.systemDefaultDnsResolver = new SystemDefaultDnsResolver();
+        this.cache = new LinkedHashMap<>();
         //disabling cache
         lookupCache = new Cache();
         lookupCache.setMaxCache(0);
@@ -101,8 +110,14 @@ public class DNSCacheManager extends ConfigTestElement implements TestIterationL
     @Override
     public Object clone() {
         DNSCacheManager clone = (DNSCacheManager) super.clone();
-        clone.systemDefaultDnsResolver = new SystemDefaultDnsResolver();
-        clone.cache = new LinkedHashMap<>();
+        clone.resolver = createResolver();
+        return clone;
+    }
+
+    /**
+     * @return {@link Resolver}
+     */
+    private Resolver createResolver() {
         CollectionProperty dnsServers = getServers();
         try {
             String[] serverNames = new String[dnsServers.size()];
@@ -111,16 +126,18 @@ public class DNSCacheManager extends ConfigTestElement implements TestIterationL
                 serverNames[index] = jMeterProperty.getStringValue();
                 index++;
             }
-            clone.resolver = new ExtendedResolver(serverNames);
-            log.debug("Using DNS Resolvers: "
-                    + Arrays.asList(((ExtendedResolver) clone.resolver)
-                            .getResolvers()));
+            ExtendedResolver result = new ExtendedResolver(serverNames);
+            if (log.isDebugEnabled()) {
+                log.debug("Using DNS Resolvers: {}", Arrays.asList((result).getResolvers()));
+            }
             // resolvers will be chosen via round-robin
-            ((ExtendedResolver) clone.resolver).setLoadBalance(true);
+            result.setLoadBalance(true);
+            return result;
         } catch (UnknownHostException uhe) {
-            log.warn("Failed to create Extended resolver: " + uhe.getMessage());
+            this.initFailed = true;
+            log.warn("Failed to create Extended resolver: {}", uhe.getMessage(), uhe);
+            return null;
         }
-        return clone;
     }
 
     /**
@@ -129,55 +146,142 @@ public class DNSCacheManager extends ConfigTestElement implements TestIterationL
      */
     @Override
     public InetAddress[] resolve(String host) throws UnknownHostException {
-        if (cache.containsKey(host)) {
+        InetAddress[] result = cache.get(host);
+        // cache may contain null.
+        // A return value of null does not necessarily 
+        // indicate that the map contains no mapping 
+        // for the key; it's also possible that the map 
+        // explicitly maps the key to null
+        // https://docs.oracle.com/javase/8/docs/api/java/util/LinkedHashMap.html
+        if (result != null || cache.containsKey(host)) {
             if (log.isDebugEnabled()) {
-                log.debug("Cache hit thr#" + JMeterContextService.getContext().getThreadNum() + ": " + host + "=>"
-                        + Arrays.toString(cache.get(host)));
+                log.debug("Cache hit thr#{}: {} => {}", JMeterContextService.getContext().getThreadNum(), host,
+                        Arrays.toString(result));
             }
-            return cache.get(host);
+            return result;
+        } else if (isStaticHost(host)) {
+            InetAddress[] staticAddresses = fromStaticHost(host);
+            if (log.isDebugEnabled()) {
+                log.debug("Cache miss thr#{}: (static) {} => {}", JMeterContextService.getContext().getThreadNum(), host,
+                        Arrays.toString(staticAddresses));
+            }
+            cache.put(host, staticAddresses);
+            return staticAddresses;
         } else {
             InetAddress[] addresses = requestLookup(host);
             if (log.isDebugEnabled()) {
-                log.debug("Cache miss thr#" + JMeterContextService.getContext().getThreadNum() + ": " + host + "=>"
-                        + Arrays.toString(addresses));
+                log.debug("Cache miss thr#{}: {} => {}", JMeterContextService.getContext().getThreadNum(), host,
+                        Arrays.toString(addresses));
             }
             cache.put(host, addresses);
             return addresses;
         }
     }
 
+    private boolean isStaticHost(String host) {
+        JMeterProperty p = getProperty(HOSTS);
+        if (p instanceof NullProperty) {
+            removeProperty(HOSTS);
+            return false;
+        }
+        CollectionProperty property = (CollectionProperty) p;
+        PropertyIterator iterator = property.iterator();
+        while (iterator.hasNext()) {
+            TestElementProperty possibleEntry = (TestElementProperty) iterator.next();
+            if (log.isDebugEnabled()) {
+                log.debug("Look for {} at {}: {}", host, possibleEntry.getObjectValue(), possibleEntry.getObjectValue().getClass());
+            }
+            StaticHost entry = (StaticHost) possibleEntry.getObjectValue();
+            if (entry.getName().equalsIgnoreCase(host)) {
+                if (log.isDebugEnabled()) {
+                    log.debug("Found static host: {} => {}", host, entry.getAddress());
+                }
+                return true;
+            }
+        }
+        log.debug("No static host found for {}", host);
+        return false;
+    }
+
+    private InetAddress[] fromStaticHost(String host) {
+        JMeterProperty p = getProperty(HOSTS);
+        if (p instanceof NullProperty) {
+            removeProperty(HOSTS);
+            return new InetAddress[0];
+        }
+        CollectionProperty property = (CollectionProperty) p;
+        PropertyIterator iterator = property.iterator();
+        while (iterator.hasNext()) {
+            StaticHost entry = (StaticHost) ((TestElementProperty)iterator.next()).getObjectValue();
+            if (entry.getName().equals(host)) {
+                List<InetAddress> addresses = new ArrayList<>();
+                for (String address : Arrays.asList(entry.getAddress().split("\\s*,\\s*"))) {
+                    try {
+                        addresses.addAll(Arrays.asList(requestLookup(address)));
+                    } catch (UnknownHostException e) {
+                        log.warn("Couldn't resolve static address {} for host {}", address, host, e);
+                    }
+                }
+                return addresses.toArray(new InetAddress[addresses.size()]);
+            }
+        }
+        return new InetAddress[0];
+    }
+
     /**
      * Sends DNS request via system or custom DNS resolver
+     * @param host Host
+     * @return array of {@link InetAddress} or null if lookup did not return result
      */
     private InetAddress[] requestLookup(String host) throws UnknownHostException {
         InetAddress[] addresses = null;
-        if (isCustomResolver() && ((ExtendedResolver) resolver).getResolvers().length > 0) {
-            try {
-                Lookup lookup = new Lookup(host, Type.A);
-                lookup.setCache(lookupCache);
-                if (timeoutMs > 0) {
-                    resolver.setTimeout(timeoutMs / 1000, timeoutMs % 1000);
+        if (isCustomResolver()) {
+            ExtendedResolver extendedResolver = getResolver();
+            if (extendedResolver != null) {
+                if(extendedResolver.getResolvers().length > 0) {
+                    try {
+                        Lookup lookup = new Lookup(host, Type.A);
+                        lookup.setCache(lookupCache);
+                        if (timeoutMs > 0) {
+                            resolver.setTimeout(timeoutMs / 1000, timeoutMs % 1000);
+                        }
+                        lookup.setResolver(resolver);
+                        Record[] records = lookup.run();
+                        if (records == null || records.length == 0) {
+                            throw new UnknownHostException("Failed to resolve host name: " + host);
+                        }
+                        addresses = new InetAddress[records.length];
+                        for (int i = 0; i < records.length; i++) {
+                            addresses[i] = ((ARecord) records[i]).getAddress();
+                        }
+                    } catch (TextParseException tpe) {
+                        log.debug("Failed to create Lookup object: " + tpe);
+                    }
+                    return addresses;
                 }
-                lookup.setResolver(resolver);
-                Record[] records = lookup.run();
-                if (records == null || records.length == 0) {
-                    throw new UnknownHostException("Failed to resolve host name: " + host);
-                }
-                addresses = new InetAddress[records.length];
-                for (int i = 0; i < records.length; i++) {
-                    addresses[i] = ((ARecord) records[i]).getAddress();
-                }
-            } catch (TextParseException tpe) {
-                log.debug("Failed to create Lookup object: " + tpe);
-            }
-        } else {
-            addresses = systemDefaultDnsResolver.resolve(host);
-            if (log.isDebugEnabled()) {
-                log.debug("Cache miss: " + host + " Thread #" + JMeterContextService.getContext().getThreadNum()
-                        + ", resolved with system resolver into " + Arrays.toString(addresses));
+            } else {
+                throw new UnknownHostException("Could not resolve host:"+host
+                        +", failed to initialize resolver"
+                        + " or no resolver found");
             }
         }
+        addresses = systemDefaultDnsResolver.resolve(host);
+        if (log.isDebugEnabled()) {
+            log.debug("Cache miss: {} Thread #{}, resolved with system resolver into {}", host,
+                    JMeterContextService.getContext().getThreadNum(), Arrays.toString(addresses));
+        }
         return addresses;
+    }
+
+    /**
+     * Tries to initialize resolver , otherwise sets initFailed to true
+     * @return ExtendedResolver if init succeeded or null otherwise
+     */
+    private ExtendedResolver getResolver() {
+        if(resolver == null && !initFailed) {
+            resolver = createResolver();
+        }
+        return (ExtendedResolver) resolver;
     }
 
     /**
@@ -197,6 +301,10 @@ public class DNSCacheManager extends ConfigTestElement implements TestIterationL
     public void clear() {
         super.clear();
         clearServers(); // ensure data is set up OK initially
+        clearHosts();
+        this.cache.clear();
+        this.initFailed = false;
+        this.resolver = null;
     }
 
     /**
@@ -207,12 +315,45 @@ public class DNSCacheManager extends ConfigTestElement implements TestIterationL
         setProperty(new CollectionProperty(SERVERS, new ArrayList<String>()));
     }
 
+    /**
+     * Add DNS Server
+     * @param dnsServer DNS Server
+     */
     public void addServer(String dnsServer) {
         getServers().addItem(dnsServer);
     }
 
+    /**
+     * @return DNS Servers
+     */
     public CollectionProperty getServers() {
         return (CollectionProperty) getProperty(SERVERS);
+    }
+
+    /**
+     * Clear static hosts
+     */
+    private void clearHosts() {
+        log.debug("Clear all hosts from store");
+        removeProperty(HOSTS);
+        cache.clear();
+    }
+
+    /**
+     * Add static host
+     * @param dnsHost DNS host
+     * @param addresses Comma separated list of addresses
+     */
+    public void addHost(String dnsHost, String addresses) {
+        getHosts().addItem(new StaticHost(dnsHost, addresses));
+        cache.clear();
+    }
+
+    public CollectionProperty getHosts() {
+        if (getProperty(HOSTS) instanceof NullProperty) {
+            setProperty(new CollectionProperty(HOSTS, new ArrayList<StaticHost>()));
+        }
+        return (CollectionProperty) getProperty(HOSTS);
     }
 
     /**

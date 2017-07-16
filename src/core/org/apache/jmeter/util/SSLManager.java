@@ -32,9 +32,8 @@ import javax.swing.JOptionPane;
 
 import org.apache.jmeter.gui.GuiPackage;
 import org.apache.jmeter.util.keystore.JmeterKeyStore;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The SSLManager handles the KeyStore information for JMeter. Basically, it
@@ -48,11 +47,11 @@ import org.apache.log.Logger;
  *
  */
 public abstract class SSLManager {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(SSLManager.class);
 
     private static final String SSL_TRUST_STORE = "javax.net.ssl.trustStore";// $NON-NLS-1$
 
-    private static final String KEY_STORE_PASSWORD = "javax.net.ssl.keyStorePassword"; // $NON-NLS-1$
+    private static final String KEY_STORE_PASSWORD = "javax.net.ssl.keyStorePassword"; // $NON-NLS-1$ NOSONAR no hard coded password
 
     public static final String JAVAX_NET_SSL_KEY_STORE = "javax.net.ssl.keyStore"; // $NON-NLS-1$
 
@@ -64,7 +63,7 @@ public abstract class SSLManager {
     //@GuardedBy("this")
     private static SSLManager manager;
 
-    private static final boolean isSSLSupported = true;
+    private static final boolean IS_SSL_SUPPORTED = true;
 
     /** Cache the KeyStore instance */
     private volatile JmeterKeyStore keyStore;
@@ -116,7 +115,7 @@ public abstract class SSLManager {
             String fileName = System.getProperty(JAVAX_NET_SSL_KEY_STORE,""); // empty if not provided
             String fileType = System.getProperty(JAVAX_NET_SSL_KEY_STORE_TYPE, // use the system property to determine the type
                     fileName.toLowerCase(Locale.ENGLISH).endsWith(".p12") ? PKCS12 : "JKS"); // otherwise use the name
-            log.info("JmeterKeyStore Location: " + fileName + " type " + fileType);
+            log.info("JmeterKeyStore Location: {} type {}", fileName, fileType);
             try {
                 this.keyStore = JmeterKeyStore.getInstance(fileType, keystoreAliasStartIndex, keystoreAliasEndIndex, clientCertAliasVarName);
                 log.info("KeyStore created OK");
@@ -124,15 +123,19 @@ public abstract class SSLManager {
                 this.keyStore = null;
                 throw new RuntimeException("Could not create keystore: "+e.getMessage(), e);
             }
-            InputStream fileInputStream = null;
+
             try {
                 File initStore = new File(fileName);
 
                 if (fileName.length() >0 && initStore.exists()) {
-                    fileInputStream = new BufferedInputStream(new FileInputStream(initStore));
-                    this.keyStore.load(fileInputStream, getPassword());
-                    if (log.isInfoEnabled()) {
-                        log.info("Total of " + keyStore.getAliasCount() + " aliases loaded OK from keystore");
+                    try (InputStream fis = new FileInputStream(initStore);
+                            InputStream fileInputStream = new BufferedInputStream(fis)) {
+                        this.keyStore.load(fileInputStream, getPassword());
+                        if (log.isInfoEnabled()) {
+                            log.info(
+                                    "Total of {} aliases loaded OK from keystore",
+                                    keyStore.getAliasCount());
+                        }
                     }
                 } else {
                     log.warn("Keystore file not found, loading empty keystore");
@@ -140,12 +143,12 @@ public abstract class SSLManager {
                     this.keyStore.load(null, "");
                 }
             } catch (Exception e) {
-                log.error("Problem loading keystore: " +e.getMessage(), e);
-            } finally {
-                JOrphanUtils.closeQuietly(fileInputStream);
+                log.error("Problem loading keystore: {}", e.getMessage(), e);
             }
 
-            log.debug("JmeterKeyStore type: " + this.keyStore.getClass().toString());
+            if (log.isDebugEnabled()) {
+                log.debug("JmeterKeyStore type: {}", this.keyStore.getClass());
+            }
         }
 
         return this.keyStore;
@@ -215,22 +218,21 @@ public abstract class SSLManager {
                 throw new RuntimeException("Problem creating truststore: "+e.getMessage(), e);
             }
 
-            InputStream fileInputStream = null;
             try {
                 File initStore = new File(fileName);
 
                 if (initStore.exists()) {
-                    fileInputStream = new BufferedInputStream(new FileInputStream(initStore));
-                    this.trustStore.load(fileInputStream, null);
-                    log.info("Truststore loaded OK from file");
+                    try (InputStream fis = new FileInputStream(initStore);
+                            InputStream fileInputStream = new BufferedInputStream(fis)) {
+                        this.trustStore.load(fileInputStream, null);
+                        log.info("Truststore loaded OK from file");
+                    }
                 } else {
                     log.info("Truststore file not found, loading empty truststore");
                     this.trustStore.load(null, null);
                 }
             } catch (Exception e) {
                 throw new RuntimeException("Can't load TrustStore: " + e.getMessage(), e);
-            } finally {
-                JOrphanUtils.closeQuietly(fileInputStream);
             }
         }
 
@@ -264,7 +266,7 @@ public abstract class SSLManager {
      * @return flag whether SSL is supported
      */
     public static boolean isSSLSupported() {
-        return SSLManager.isSSLSupported;
+        return SSLManager.IS_SSL_SUPPORTED;
     }
 
     /**

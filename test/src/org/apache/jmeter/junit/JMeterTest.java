@@ -44,9 +44,6 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 
-import junit.framework.Test;
-import junit.framework.TestSuite;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.jmeter.config.gui.ObsoleteGui;
 import org.apache.jmeter.gui.JMeterGUIComponent;
@@ -57,18 +54,21 @@ import org.apache.jmeter.testbeans.TestBean;
 import org.apache.jmeter.testbeans.gui.TestBeanGUI;
 import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
 import org.apache.jorphan.reflect.ClassFinder;
 import org.apache.jorphan.util.JOrphanUtils;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
 
-public class JMeterTest extends JMeterTestCaseJUnit3 {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+import junit.framework.Test;
+import junit.framework.TestSuite;
+
+public class JMeterTest extends JMeterTestCaseJUnit {
+    private static final Logger log = LoggerFactory.getLogger(JMeterTest.class);
 
     private static Map<String, Boolean> guiTitles;
 
@@ -151,7 +151,7 @@ public class JMeterTest extends JMeterTestCaseJUnit3 {
         guiTitles = new HashMap<>(90);
 
         String compref = "../xdocs/usermanual/component_reference.xml";
-        try (InputStream stream = new FileInputStream(compref)) {
+        try (InputStream stream = new FileInputStream(findTestFile(compref))) {
             org.w3c.dom.Element body = getBodyFromXMLDocument(stream);
             NodeList sections = body.getElementsByTagName("section");
             for (int i = 0; i < sections.getLength(); i++) {
@@ -197,7 +197,7 @@ public class JMeterTest extends JMeterTestCaseJUnit3 {
         guiTags = new HashMap<>(90);
 
         String compref = "../xdocs/usermanual/component_reference.xml";
-        try (InputStream stream = new FileInputStream(compref)) {
+        try (InputStream stream = new FileInputStream(findTestFile(compref))) {
             org.w3c.dom.Element body = getBodyFromXMLDocument(stream);
             NodeList sections = body.getElementsByTagName("section");
             
@@ -339,7 +339,7 @@ public class JMeterTest extends JMeterTestCaseJUnit3 {
                 assertFalse("'" + label + "' should be in resource file for " + name, JMeterUtils.getResString(
                         label).startsWith(JMeterUtils.RES_KEY_PFX));
             } catch (UnsupportedOperationException uoe) {
-                log.warn("Class has not yet implemented getLabelResource " + name);
+                log.warn("Class has not yet implemented getLabelResource {}", name);
             }
         }
         checkElementAlias(guiItem);
@@ -366,7 +366,7 @@ public class JMeterTest extends JMeterTestCaseJUnit3 {
         if (!(guiItem instanceof UnsharedComponent)) {
             assertEquals("SHARED: Failed on " + name, "", el2.getPropertyAsString("NOT"));
         }
-        log.debug("Saving element: " + el.getClass());
+        log.debug("Saving element: {}", el.getClass());
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         SaveService.saveElement(el, bos);
         ByteArrayInputStream bis = new ByteArrayInputStream(bos.toByteArray());
@@ -462,7 +462,10 @@ public class JMeterTest extends JMeterTestCaseJUnit3 {
                                     new Object[] { myThis }));
                         } catch (NoSuchMethodException f) {
                             // no luck. Ignore this class
-                            System.out.println("o.a.j.junit.JMeterTest WARN: " + exName + ": NoSuchMethodException  " + n + ", missing empty Constructor or Constructor with Object parameter");
+                            if (!Enum.class.isAssignableFrom(c)) { // ignore enums
+                                System.out.println("o.a.j.junit.JMeterTest WARN: " + exName + ": NoSuchMethodException  " + 
+                                    n + ", missing empty Constructor or Constructor with Object parameter");                                
+                            }
                         }
                     }
                 } catch (NoClassDefFoundError e) {

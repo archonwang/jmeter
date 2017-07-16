@@ -40,8 +40,8 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.property.TestElementProperty;
 import org.apache.jmeter.util.JMeterUtils;
 import org.apache.jorphan.exec.SystemCommand;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A sampler for executing a System function. 
@@ -78,7 +78,7 @@ public class SystemSampler extends AbstractSampler {
     /**
      * Logging
      */
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(SystemSampler.class);
 
     private static final Set<String> APPLIABLE_CONFIG_CLASSES = new HashSet<>(
             Arrays.asList("org.apache.jmeter.config.gui.SimpleConfigGui"));
@@ -127,7 +127,7 @@ public class SystemSampler extends AbstractSampler {
             env.put(arg.getName(), arg.getPropertyAsString(Argument.VALUE));
         }
         
-        File directory = null;
+        File directory;
         if(StringUtils.isEmpty(getDirectory())) {
             directory = new File(FileServer.getDefaultBase());
             if(log.isDebugEnabled()) {
@@ -155,7 +155,7 @@ public class SystemSampler extends AbstractSampler {
             results.sampleStart();
             int returnCode = nativeCommand.run(cmds);
             results.sampleEnd();
-            results.setResponseCode(Integer.toString(returnCode)); // TODO is this the best way to do this?
+            results.setResponseCode(Integer.toString(returnCode));
             if(log.isDebugEnabled()) {
                 log.debug("Ran : "+cmdLine + " using working directory: "+directory.getAbsolutePath()+
                         " with execution environment: "+nativeCommand.getExecutionEnvironment()+ " => " + returnCode);
@@ -171,13 +171,14 @@ public class SystemSampler extends AbstractSampler {
         } catch (IOException ioe) {
             results.sampleEnd();
             results.setSuccessful(false);
-            // results.setResponseCode("???"); TODO what code should be set here?
+            results.setResponseCode("500"); //$NON-NLS-1$
             results.setResponseMessage("Exception occurred whilst executing system call: " + ioe);
         } catch (InterruptedException ie) {
             results.sampleEnd();
             results.setSuccessful(false);
-            // results.setResponseCode("???"); TODO what code should be set here?
+            results.setResponseCode("500"); //$NON-NLS-1$
             results.setResponseMessage("System Sampler interrupted whilst executing system call: " + ie);
+            Thread.currentThread().interrupt();
         }
 
         if (nativeCommand != null) {

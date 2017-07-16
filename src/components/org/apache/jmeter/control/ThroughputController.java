@@ -29,8 +29,8 @@ import org.apache.jmeter.testelement.property.FloatProperty;
 import org.apache.jmeter.testelement.property.IntegerProperty;
 import org.apache.jmeter.testelement.property.JMeterProperty;
 import org.apache.jmeter.testelement.property.StringProperty;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class represents a controller that can control the number of times that
@@ -44,9 +44,9 @@ import org.apache.log.Logger;
 public class ThroughputController extends GenericController implements Serializable, LoopIterationListener,
         TestStateListener {
 
-    private static final long serialVersionUID = 233L;
+    private static final long serialVersionUID = 234L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(ThroughputController.class);
     public static final int BYNUMBER = 0;
 
     public static final int BYPERCENT = 1;
@@ -137,10 +137,11 @@ public class ThroughputController extends GenericController implements Serializa
         if (prop instanceof IntegerProperty) {
             retVal = ((IntegerProperty) prop).getIntValue();
         } else {
+            String valueString = prop.getStringValue();
             try {
-                retVal = Integer.parseInt(prop.getStringValue());
+                retVal = Integer.parseInt(valueString);
             } catch (NumberFormatException e) {
-                log.warn("Error parsing "+prop.getStringValue(),e);
+                log.warn("Error parsing '{}'", valueString, e);
             }
         }
         return retVal;
@@ -164,15 +165,16 @@ public class ThroughputController extends GenericController implements Serializa
         if (prop instanceof FloatProperty) {
             retVal = ((FloatProperty) prop).getFloatValue();
         } else {
+            String valueString = prop.getStringValue();
             try {
-                retVal = Float.parseFloat(prop.getStringValue());
+                retVal = Float.parseFloat(valueString);
             } catch (NumberFormatException e) {
-                log.warn("Error parsing "+prop.getStringValue(),e);
+                log.warn("Error parsing '{}'", valueString, e);
             }
         }
         return retVal;
     }
-    
+
     @SuppressWarnings("SynchronizeOnNonFinalField")
     private int getExecutions() {
         if (!isPerThread()) {
@@ -209,13 +211,11 @@ public class ThroughputController extends GenericController implements Serializa
      */
     @Override
     public boolean isDone() {
-        if (subControllersAndSamplers.size() == 0) {
-            return true;
-        } else if (getStyle() == BYNUMBER && getExecutions() >= getMaxThroughputAsInt()
-                && current >= getSubControllers().size()) {
+        if (subControllersAndSamplers.isEmpty()) {
             return true;
         } else {
-            return false;
+            return getStyle() == BYNUMBER && getExecutions() >= getMaxThroughputAsInt()
+                && current >= getSubControllers().size();
         }
     }
 
@@ -275,7 +275,7 @@ public class ThroughputController extends GenericController implements Serializa
     public void testEnded(String host) {
         // NOOP
     }
-    
+
     @Override
     protected Object readResolve(){
         super.readResolve();

@@ -54,14 +54,14 @@ import org.apache.jmeter.testelement.TestElement;
 import org.apache.jmeter.testelement.property.BooleanProperty;
 import org.apache.jmeter.testelement.property.IntegerProperty;
 import org.apache.jmeter.testelement.property.StringProperty;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Sampler that can read from POP3 and IMAP mail servers
  */
 public class MailReaderSampler extends AbstractSampler implements Interruptible {
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(MailReaderSampler.class);
 
     private static final long serialVersionUID = 240L;
 
@@ -73,7 +73,7 @@ public class MailReaderSampler extends AbstractSampler implements Interruptible 
     private static final String SERVER = "host"; // $NON-NLS-1$
     private static final String PORT = "port"; // $NON-NLS-1$
     private static final String USERNAME = "username"; // $NON-NLS-1$
-    private static final String PASSWORD = "password"; // $NON-NLS-1$
+    private static final String PASSWORD = "password"; // $NON-NLS-1$ NOSONAR not a hardcoded password
     private static final String FOLDER = "folder"; // $NON-NLS-1$
     private static final String DELETE = "delete"; // $NON-NLS-1$
     private static final String NUM_MESSAGES = "num_messages"; // $NON-NLS-1$

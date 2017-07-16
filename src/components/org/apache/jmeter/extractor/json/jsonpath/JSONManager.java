@@ -25,16 +25,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
-
-import net.minidev.json.JSONArray;
-import net.minidev.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.JsonPath;
 import com.jayway.jsonpath.Option;
 import com.jayway.jsonpath.PathNotFoundException;
+
+import net.minidev.json.JSONArray;
+import net.minidev.json.JSONObject;
 
 /**
  * Handles the extractions
@@ -43,7 +43,7 @@ import com.jayway.jsonpath.PathNotFoundException;
  */
 public class JSONManager {
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(JSONManager.class);
     private static final Configuration DEFAULT_CONFIGURATION =
             Configuration.defaultConfiguration().addOptions(Option.ALWAYS_RETURN_LIST);
     /**
@@ -51,7 +51,7 @@ public class JSONManager {
      * store the computed JsonPath for the set of JSON Path Expressions.
      * Usually there will be 1 to Maximum 10 elements
      */
-    private Map<String, JsonPath> expressionToJsonPath = new HashMap<>(2);
+    private final Map<String, JsonPath> expressionToJsonPath = new HashMap<>(2);
 
     private JsonPath getJsonPath(String jsonPathExpression) {
         JsonPath jsonPath = expressionToJsonPath.get(jsonPathExpression);
@@ -72,7 +72,7 @@ public class JSONManager {
      * @param jsonString JSON String from which data is extracted
      * @param jsonPath JSON-PATH expression
      * @return List of JSON Strings of the extracted data
-     * @throws ParseException
+     * @throws ParseException when parsing fails
      */
     public List<Object> extractWithJsonPath(String jsonString, String jsonPath)
             throws ParseException {
@@ -82,9 +82,8 @@ public class JSONManager {
             extractedObjects = jsonPathParser.read(jsonString,
                     DEFAULT_CONFIGURATION);
         } catch (PathNotFoundException e) {
-            if (log.isDebugEnabled()) {
-                log.debug("Could not find JSON Path " + jsonPath + " in ["
-                        + jsonString + "]: " + e.getLocalizedMessage());
+            if(log.isDebugEnabled()) {
+                log.debug("Could not find JSON Path {} in [{}]: {}", jsonPath, jsonString, e.getLocalizedMessage());
             }
             return Collections.emptyList();
         }

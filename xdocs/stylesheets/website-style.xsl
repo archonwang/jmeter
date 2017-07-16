@@ -30,12 +30,12 @@
   <xsl:param name="sshotdir" select="concat($imgdir, '/screenshots')" />
   <xsl:param name="cssdir" select="concat($relative-path, '/css')" />
   <xsl:param name="jakarta-site" select="'http://jakarta.apache.org'" />
-  <xsl:param name="year" select="'2016'" />
+  <xsl:param name="year" select="'2017'" />
   <xsl:param name="max-img-width" select="'600'" />
 
   <!-- Output method -->
   <xsl:output method="html" html-version="5.0" encoding="iso-8859-15"
-    indent="no" doctype-system="about:legacy-compat" />
+    indent="yes" doctype-system="about:legacy-compat" />
 
   <xsl:template match="document">
     <xsl:variable name="project" select="document('project.xml')/project" />
@@ -108,9 +108,9 @@
             </div>
           </xsl:if>
           <div class="banner">
-            <iframe src="http://www.apache.org/ads/bannerbar.html"
-              style="border-width:0;" frameborder="0" scrolling="no"
-            ></iframe>
+            <a href="http://www.apache.org/events/current-event.html">
+              <img src="http://www.apache.org/events/current-event-234x60.png" alt="Current Apache event teaser" />
+            </a>
             <div class="clear"></div>
           </div>
         </div>
@@ -513,7 +513,6 @@
     <a href="https://github.com/apache/jmeter/pull/{./text()}">
       Pull request #<xsl:value-of select="./text()" />
     </a>
-    -
   </xsl:template>
 
   <xsl:template match="links">

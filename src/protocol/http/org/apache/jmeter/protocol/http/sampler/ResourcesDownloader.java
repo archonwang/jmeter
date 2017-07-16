@@ -25,14 +25,13 @@ import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.Future;
 import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.jmeter.testelement.property.CollectionProperty;
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Manages the parallel http resources download.<br>
@@ -67,7 +66,7 @@ import org.apache.log.Logger;
  */
 public class ResourcesDownloader {
 
-    private static final Logger LOG = LoggingManager.getLoggerForClass();
+    private static final Logger LOG = LoggerFactory.getLogger(ResourcesDownloader.class);
     
     /** this is the maximum time that excess idle threads will wait for new tasks before terminating */
     private static final long THREAD_KEEP_ALIVE_TIME = JMeterUtils.getPropDefault("httpsampler.parallel_download_thread_keepalive_inseconds", 60L);
@@ -90,22 +89,18 @@ public class ResourcesDownloader {
     
     
     private void init() {
-        LOG.info("Creating ResourcesDownloader with keepalive_inseconds:"+THREAD_KEEP_ALIVE_TIME);
-        ThreadPoolExecutor exec = new ThreadPoolExecutor(
+        LOG.info("Creating ResourcesDownloader with keepalive_inseconds : {}", THREAD_KEEP_ALIVE_TIME);
+        concurrentExecutor = new ThreadPoolExecutor(
                 MIN_POOL_SIZE, MAX_POOL_SIZE, THREAD_KEEP_ALIVE_TIME, TimeUnit.SECONDS,
-                new SynchronousQueue<Runnable>(),
-                new ThreadFactory() {
-                    @Override
-                    public Thread newThread(final Runnable r) {
-                        Thread t = new Thread(r);
-                        t.setName("ResDownload-" + t.getName()); //$NON-NLS-1$
-                        t.setDaemon(true);
-                        return t;
-                    }
+                new SynchronousQueue<>(),
+                r -> {
+                    Thread t = new Thread(r);
+                    t.setName("ResDownload-" + t.getName()); //$NON-NLS-1$
+                    t.setDaemon(true);
+                    return t;
                 }) {
 
         };
-        concurrentExecutor = exec;
     }
     
     /**
@@ -119,7 +114,7 @@ public class ResourcesDownloader {
             List<Runnable> drainList = new ArrayList<>();
             concurrentExecutor.getQueue().drainTo(drainList);
             if(!drainList.isEmpty()) {
-                LOG.warn("the pool executor workqueue is not empty size=" + drainList.size());
+                LOG.warn("the pool executor workqueue is not empty size={}", drainList.size());
                 for (Runnable runnable : drainList) {
                     if(runnable instanceof Future<?>) {
                         Future<?> f = (Future<?>) runnable;
@@ -162,7 +157,7 @@ public class ResourcesDownloader {
         concurrentExecutor.setMaximumPoolSize(MAX_POOL_SIZE);
         
         if(LOG.isDebugEnabled()) {
-            LOG.debug("PoolSize=" + concurrentExecutor.getPoolSize()+" LargestPoolSize=" + concurrentExecutor.getLargestPoolSize());
+            LOG.debug("PoolSize={} LargestPoolSize={}", concurrentExecutor.getPoolSize(), concurrentExecutor.getLargestPoolSize());
         }
         
         CompletionService<AsynSamplerResultHolder> completionService = new ExecutorCompletionService<>(concurrentExecutor);
@@ -195,9 +190,7 @@ public class ResourcesDownloader {
         finally {
             //bug 51925 : Calling Stop on Test leaks executor threads when concurrent download of resources is on
             if(remainingTasksToTake > 0) {
-                if(LOG.isDebugEnabled()) {
-                    LOG.debug("Interrupted while waiting for resource downloads : cancelling remaining tasks");
-                }
+                LOG.debug("Interrupted while waiting for resource downloads : cancelling remaining tasks");
                 for (Future<AsynSamplerResultHolder> future : submittedTasks) {
                     if(!future.isDone()) {
                         future.cancel(true);

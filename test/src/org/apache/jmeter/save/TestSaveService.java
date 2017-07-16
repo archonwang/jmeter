@@ -20,7 +20,6 @@ package org.apache.jmeter.save;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.BufferedReader;
@@ -93,11 +92,6 @@ public class TestSaveService extends JMeterTestCase {
     public void testPropfile2() throws Exception {
         assertEquals("Property File Version mismatch, ensure you update SaveService#FILEVERSION field with sha1 of saveservice.properties without newline", SaveService.FILEVERSION, SaveService.getFileVersion());
     }
-    
-    @Test
-    public void testVersions() throws Exception {
-        assertTrue("Unexpected version found", SaveService.checkVersions());
-    }
 
     @Test
     public void testLoadAndSave() throws Exception {
@@ -133,7 +127,7 @@ public class TestSaveService extends JMeterTestCase {
         } finally {
             out.close(); // Make sure all the data is flushed out
         }
-
+        
         final FileStats compareStats = savedStats == FileStats.NO_STATS ? origStats : savedStats;
 
         final FileStats outputStats;

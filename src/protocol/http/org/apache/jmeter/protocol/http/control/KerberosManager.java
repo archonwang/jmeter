@@ -20,7 +20,6 @@ package org.apache.jmeter.protocol.http.control;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
@@ -37,8 +36,8 @@ import javax.security.auth.login.LoginContext;
 import javax.security.auth.login.LoginException;
 
 import org.apache.jmeter.util.JMeterUtils;
-import org.apache.jorphan.logging.LoggingManager;
-import org.apache.log.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.Logger;
 
 /**
  * Takes in charge Kerberos auth mechanism
@@ -48,12 +47,13 @@ public class KerberosManager implements Serializable {
 
     private static final long serialVersionUID = 2L;
 
-    private static final Logger log = LoggingManager.getLoggerForClass();
+    private static final Logger log = LoggerFactory.getLogger(KerberosManager.class);
 
     private static final String JAAS_APPLICATION = JMeterUtils.getPropDefault("kerberos_jaas_application", "JMeter"); //$NON-NLS-1$ $NON-NLS-2$
     private final ConcurrentMap<String, Future<Subject>> subjects = new ConcurrentHashMap<>();
 
     public KerberosManager() {
+        super();
     }
 
     void clearSubjects() {
@@ -62,36 +62,31 @@ public class KerberosManager implements Serializable {
 
     public Subject getSubjectForUser(final String username,
             final String password) {
-        Callable<Subject> callable = new Callable<Subject>() {
-
-            @Override
-            public Subject call() throws Exception {
-                LoginContext loginCtx;
-                try {
-                    loginCtx = new LoginContext(JAAS_APPLICATION,
-                            new LoginCallbackHandler(username, password));
-                    loginCtx.login();
-                    return loginCtx.getSubject();
-                } catch (LoginException e) {
-                    log.warn("Could not log in user " + username, e);
-                }
-                return null;
+        FutureTask<Subject> task = new FutureTask<>(() -> {
+            LoginContext loginCtx;
+            try {
+                loginCtx = new LoginContext(JAAS_APPLICATION,
+                        new LoginCallbackHandler(username, password));
+                loginCtx.login();
+                return loginCtx.getSubject();
+            } catch (LoginException e) {
+                log.warn("Could not log in user " + username, e);
             }
-        };
-
-        FutureTask<Subject> task = new FutureTask<>(callable);
+            return null;
+        });
         if(log.isDebugEnabled()) {
             log.debug("Subject cached:"+subjects.keySet() +" before:"+username);
         }
         Future<Subject> subjectFuture = subjects.putIfAbsent(username, task);
         if (subjectFuture == null) {
             subjectFuture = task;
-            task.run();
+            task.run(); // NOSONAR we just execute method
         }
         try {
             return subjectFuture.get();
         } catch (InterruptedException e1) {
             log.warn("Interrupted while getting subject for " + username, e1);
+            Thread.currentThread().interrupt();
         } catch (ExecutionException e1) {
             log.warn("Execution of getting subject for " + username + " failed", e1);
         }
